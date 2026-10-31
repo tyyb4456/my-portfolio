@@ -87,6 +87,7 @@ def patch_save_report(
         raw_text: str,
         draft: ReportDraft,
         verdict: AnomalyVerdict,
+        source_thread_id: object = None,
     ) -> FinalReport:
         captured.update(
             picker_id=picker_id,

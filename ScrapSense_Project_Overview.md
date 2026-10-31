@@ -160,7 +160,7 @@ forecasting, and the offline gap-analysis loop are not. See §9 and `IMPLEMENTAT
 
 ---
 
-## 9. What's Already Built (as of 2026-10-29)
+## 9. What's Already Built (as of 2026-11-01)
 
 - ✓ `backend/app/agents/main_agent.py` — coordinator Deep Agent with per-Clerk-user
   memory, the intake subagent, and the price tool wired in
@@ -182,9 +182,9 @@ forecasting, and the offline gap-analysis loop are not. See §9 and `IMPLEMENTAT
 - ✓ `backend/app/api/routes/health.py` — liveness and database readiness
 - ✓ PostgreSQL persistence — `AsyncPostgresSaver` checkpoints and `AsyncPostgresStore`
   memory, initialized on first chat request; Alembic migrations through
-  `0003_add_anomaly_review_fields`
+  `0005_add_report_source_thread`
 - ✓ Frontend chat UI — Clerk sign-in, server-backed thread switching, new-chat creation,
-  history restoration, and thread deletion
+  history restoration, thread deletion, and a Privacy & data dialog
 - ✓ Frontend price check — `PriceCheck.tsx` shows the median, observed range, evidence scope,
   counts, freshness, quality, seed provenance, and limitations; a null estimate is shown as
   "no trustworthy estimate", never as zero
@@ -199,7 +199,7 @@ forecasting, and the offline gap-analysis loop are not. See §9 and `IMPLEMENTAT
 - ✓ Reviewer flow — `GET /api/v1/reports` queue, `GET /api/v1/reports/{id}`, and
   `PATCH /api/v1/reports/{id}/review` are restricted to `ADMIN_USER_IDS`; the `/review` UI has
   pagination, empty/access-denied/error states, and confirmation before approval or rejection
-- ✓ Verification — 134 backend tests pass, including real-PostgreSQL price/review integration;
+- ✓ Verification — 214 backend tests pass, including real-PostgreSQL price/review/deletion and live LangGraph storage integration;
   ruff and mypy pass; the frontend lint and production build pass
 - ☐ Seed data — loader and empty file exist; no verified week-1 entries collected yet
 - ☐ Classifier agent — not present, not even a stub module
@@ -241,15 +241,19 @@ rather than hidden:
 - **Conversation history and agent memory are persisted.** LangGraph checkpoints and the
   long-term store live in PostgreSQL, so a database compromise exposes chat history and
   `/memories/picker_notes.md` contents. There is no encryption-at-rest policy yet.
-- **Thread deletion is separate from memory deletion.** Deleting a thread removes its
-  checkpoints. The per-user `/memories/picker_notes.md` is intentionally shared across that
-  user's threads and is erased by the explicit `DELETE /api/v1/chat/memory` endpoint.
+- **Deletion scopes are separate.** Deleting a thread removes only its checkpoints and row.
+  The per-user `/memories/picker_notes.md` is shared across that user's threads and is erased by
+  `DELETE /api/v1/chat/memory`. Deleting a report hard-deletes the row, its source conversation,
+  and matching notes. Account erasure removes every owned report, thread, checkpoint, and note.
+  The Privacy & data dialog exposes notes and account erasure.
 - **Thin market evidence and no verified seed entries.** Reports are now aggregated into
   price references, but low report volume and the empty seed file mean many requests
   correctly return `unavailable`. The schema stores PKR/kg only; an optional sale time is stored
   in `observed_at` and falls back to `created_at` when absent.
-- **No retention policy.** Checkpoints, memories, and report rows accumulate until someone
-  removes them. The memory endpoint is manual erasure, not automatic expiry.
+- **No automatic retention.** Checkpoints, memories, and report rows accumulate until an explicit
+  deletion or account erasure. An operator can set `CHAT_RETENTION_DAYS` and run the retention
+  command for expired chat threads, but no scheduler is installed and report/memory expiry is
+  still a policy gap.
 - **No rate limiting or durable idempotency.** A retried chat request can create another thread
   and/or duplicate a report; duplicate suppression in price aggregation is only a short-window
   guard, not a submission-level guarantee.

@@ -142,6 +142,25 @@ export function deleteThread(token: string, threadId: string): Promise<void> {
   })
 }
 
+export function deleteMemory(token: string): Promise<void> {
+  return request<void>('/chat/memory', token, {
+    method: 'DELETE',
+  })
+}
+
+export interface AccountDataErasureResponse {
+  status: 'completed'
+  reports_deleted: number
+  threads_deleted: number
+  memory_items_deleted: number
+}
+
+export function deleteAccountData(token: string): Promise<AccountDataErasureResponse> {
+  return request<AccountDataErasureResponse>('/account/data', token, {
+    method: 'DELETE',
+  })
+}
+
 export function getPriceEstimate(
   token: string,
   query: PriceEstimateQuery,
@@ -213,6 +232,12 @@ export function listReports(
     page_size: String(query.pageSize ?? 20),
   })
   return request<ReportQueueResponse>(`/reports?${params.toString()}`, token)
+}
+
+export function deleteReport(token: string, reportId: string): Promise<void> {
+  return request<void>(`/reports/${encodeURIComponent(reportId)}`, token, {
+    method: 'DELETE',
+  })
 }
 
 export function reviewReport(

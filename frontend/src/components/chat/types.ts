@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { ChatThread } from '../../lib/api'
+import type { AccountDataErasureResponse, ChatThread } from '../../lib/api'
 
 export interface ChatMessage {
   id: string
@@ -25,4 +25,6 @@ export interface ChatViewProps {
   onSelectThread: (threadId: string) => void
   onDeleteThread: () => Promise<boolean>
   onRefreshThreads: () => void
+  onEraseMemory?: () => Promise<void>
+  onEraseAccountData?: () => Promise<AccountDataErasureResponse>
 }

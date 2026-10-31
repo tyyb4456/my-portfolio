@@ -1,9 +1,9 @@
 # ScrapSense — Implementation Status Audit
 
-- **Audit date:** 2026-10-29; **remediation update:** 2026-10-31
+- **Audit date:** 2026-10-29; **remediation update:** 2026-11-01
 - **Spec source of truth:** `ScrapSense_Project_Overview.md` (supported by `README.md` and `PRODUCT.md`)
 - **Scope:** entire repository, excluding `node_modules`, `.venv`, `__pycache__`, `.git`, build output, caches, and agent-tooling directories
-- **Mode:** code inspection plus verification runs. The 2026-10-31 update added explicit long-term memory deletion, user-scoped thread repository methods, log minimization, and terminology corrections; it did not change pricing, anomaly, or provenance behavior.
+- **Mode:** code inspection plus verification runs. The 2026-11-01 update added report deletion, account-data erasure, report-to-thread attribution, an operator-invoked chat-retention command, and Privacy & data UI controls; it did not change pricing or anomaly math.
 
 ---
 
@@ -20,7 +20,7 @@ The remaining work is concentrated in the secondary/advanced scope: verified see
 1. **The core price chain is real.** `backend/app/services/prices.py`, `backend/app/services/price_aggregation.py`, `GET /api/v1/prices/estimate`, the `estimate_price` chat tool, and the frontend `PriceCheck` dialog all use the same deterministic rules. Reports are actually read back and aggregated.
 2. **Trust precedes aggregation.** Deterministic validation (`app/services/report_validation.py`), a conservative median/MAD Tier 1 (`app/services/anomaly_detection.py`), persisted `flagged` reports, and a reviewer-only approve/reject flow all exist. Only accepted, non-anomalous reports influence prices.
 3. **Authentication and per-picker isolation are tested.** Clerk bearer verification, the `sub` claim as picker id, server-owned threads, and ownership checks are implemented and covered by API tests.
-4. **The test suite is substantial and green.** 134 backend tests pass, including 12 tests that use the real PostgreSQL database for price aggregation and report review. `ruff`, `mypy`, the frontend lint, and the production build all run.
+4. **The test suite is substantial and green.** 214 backend tests pass, including price, review, and deletion tests that use real PostgreSQL and live LangGraph checkpoint/store tables. `ruff`, `mypy`, the frontend lint, and the production build all run.
 5. **The documentation is unusually honest.** Missing seed data, the disabled ML tier, the default-off LLM tier, and privacy gaps are stated rather than hidden.
 
 ### Top gaps / risks
@@ -30,7 +30,7 @@ The remaining work is concentrated in the secondary/advanced scope: verified see
 3. **No voice, camera, classifier, or forecasting.** The product remains a text chat plus a structured price form. No audio capture/transcription, image upload, CNN, TFLite/ONNX export, or time-series model exists.
 4. **Multi-turn clarification is not resolved.** Extraction reads only the last message and does not merge an earlier draft with a follow-up answer.
 5. **Provenance is weaker than documented.** The isolated compiled subagent receives the coordinator's task description, so the persisted `raw_text` may be a paraphrase rather than the picker's verbatim message.
-6. **Operational hardening is missing.** No automatic retention policy, rate limiting, idempotency key, CI, or application Dockerfiles. Manual memory deletion now exists. The live LLM path is not exercised by the suite.
+6. **Operational hardening is missing.** No automatic scheduler, rate limiting, idempotency key, CI, or application Dockerfiles. Report, thread, memory, and account erasure paths exist, and chat retention is operator-invoked. The live LLM path is not exercised by the suite.
 7. **Minor debt remains.** Some unused report schemas, a duplicate/misspelled `requirements.txt`, a stale `llm.py` docstring, and three non-blocking frontend lint warnings.
 
 ### Bottom line
@@ -62,7 +62,7 @@ D:\scrap_sense\
 │   ├── alembic\versions\
 │   │   ├── 0001_create_final_reports.py
 │   │   ├── 0002_create_chat_threads.py
-│   │   └── 0003_add_anomaly_review_fields.py   observed_at, reviewed_at, reviewed_by.
+│   │   └── 0005_add_report_source_thread.py   report source thread attribution.
 │   ├── app\
 │   │   ├── main.py                  FastAPI app factory, CORS, lifespan closing agent pool/engine.
 │   │   ├── llm.py                   xKiro-backed ChatOpenAI factory; stale "KapraOS" docstring.
@@ -74,9 +74,9 @@ D:\scrap_sense\
 │   │   │   ├── chat.py              POST /chat + thread CRUD/history/delete; Clerk-protected.
 │   │   │   ├── health.py            GET /health/live and /health/ready.
 │   │   │   ├── prices.py            GET /prices/estimate; Clerk-protected.
-│   │   │   └── reports.py           Reviewer queue, detail, and PATCH review; admin-only.
+│   │   │   └── reports.py           Reviewer queue, detail, PATCH review, and owner report delete.
 │   │   ├── auth\dependencies.py     Clerk bearer verification; require_auth and require_admin.
-│   │   ├── core\config.py           Pydantic settings for DB, xKiro, Clerk, anomaly, price.
+│   │   ├── core\config.py           Pydantic settings for DB, xKiro, Clerk, anomaly, price, chat retention.
 │   │   ├── data\seed_prices.json    Seed-price file, schema v1, intentionally empty.
 │   │   ├── db\                       Declarative Base, async engine/session factory.
 │   │   ├── models\                   Report and chat_thread ORM models.
@@ -95,7 +95,7 @@ D:\scrap_sense\
 │   │   └── workflows\
 │   │       ├── pipeline.py           Intake + validation + anomaly tiers + persistence graph.
 │   │       └── state.py              PipelineState.
-│   └── tests\                        202 tests across 21 files, including real PostgreSQL integration.
+│   └── tests\                        214 tests across 22 files, including real PostgreSQL and live LangGraph storage integration.
 │
 ├── frontend\
 │   ├── package.json                 React 19, TS, Vite 8, Clerk, Tailwind 4, oxlint. No test script.
@@ -162,7 +162,7 @@ D:\scrap_sense\
 - **No forecasting path.** No time-series model or trend logic.
 - **No offline mode.** The app requires PostgreSQL, Clerk, and a live LLM provider for normal use.
 - **No Tier 2 model.** The graph node and readiness gate exist, but no model is trained or loaded.
-- **No automatic retention policy.** Thread deletion removes checkpoints and `DELETE /api/v1/chat/memory` erases long-term picker memory, but report rows and checkpoints have no automatic expiry.
+- **No automatic expiry scheduler.** Thread deletion, memory deletion, report deletion, and account erasure are explicit actions. `CHAT_RETENTION_DAYS` plus `python -m app.services.retention` cleans expired chat threads, but deployment must schedule it. Report raw text and memory still have no automatic expiry.
 
 ---
 
@@ -206,8 +206,8 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 | B8 | Location at neighborhood/city level only; never precise GPS | **PARTIAL** | `reports.city`/`reports.area`; no GPS fields | Raw text can still contain a precise address; `area` is free text with no granularity validation. |
 | B9 | Reporter identity pseudonymous and minimized; no name/phone columns | **PARTIAL** | `picker_id` from Clerk `sub`; no name/phone columns; auth tests | The id is linkable to the account, not anonymous; raw message text may contain PII (separate gap). |
 | B10 | Dealer-referencing data only as anonymized aggregates | **PARTIAL** | No dealer model or publication path; prices are aggregates only | Nothing named is published, but there is no dedicated protection mechanism. |
-| B11 | Retention policy | **NOT STARTED** | No cleanup job/config | Acknowledged in overview and README. |
-| B12 | Memory deletion | **DONE** | `DELETE /api/v1/chat/memory`; `chat_memory.py`; unit and API tests | Store logic is tested with fakes; no live Postgres store integration test. |
+| B11 | Retention policy | **PARTIAL** | `CHAT_RETENTION_DAYS`; `app/services/retention.py`; operator command; explicit report/account erasure | No scheduler; report raw text and memory still have no automatic expiry. |
+| B12 | Memory deletion | **DONE** | `DELETE /api/v1/chat/memory`; `chat_memory.py`; unit, API, and live-store tests | Account erasure also removes the full namespace. |
 | B13 | Encryption at rest | **NOT STARTED** | No encryption config/policy | Acknowledged in overview. |
 
 ### C. Tech stack and platform
@@ -250,7 +250,7 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 | E7 | `GET /api/v1/health/ready` | **DONE** | `health.py`; tests | Checks DB only, not agent/LLM. |
 | E8 | Report submission/list/review endpoints | **PARTIAL** | `api/routes/reports.py` | Reviewer list/detail/review exist; there is no separate picker-facing report submission endpoint (reports enter through chat). |
 | E9 | SSE / streaming responses | **NOT STARTED** | No streaming code in backend/frontend | Not in the overview; noted for completeness. |
-| E10 | `reports` table + migrations | **DONE** | `models/report.py`; migrations `0001`, `0003` | Includes `observed_at`, `reviewed_at`, `reviewed_by`. |
+| E10 | `reports` table + migrations | **DONE** | `models/report.py`; migrations `0001`, `0003`, `0005` | Includes `observed_at`, `reviewed_at`, `reviewed_by`, and `source_thread_id`. |
 | E11 | `chat_threads` table + migration | **DONE** | `models/chat_thread.py`; migration `0002` | No foreign keys. |
 | E12 | LangGraph checkpoint/store tables | **DONE** | `main_agent.py`; live DB | Created by savers on first use. |
 | E13 | Report Pydantic schemas | **DONE** | `schemas/report.py` | Includes draft, verdict, final report, judgment, queue/review schemas. |
@@ -262,18 +262,21 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 | E19 | Honest documentation of gaps | **DONE** | Overview, README, PRODUCT, this audit | Docs now match the implemented price/anomaly/review scope. |
 | E20 | `GET /api/v1/prices/estimate` | **DONE** | `routes/prices.py`; `tests/test_prices_api.py` | Auth required; 422 for invalid query; 503 on DB failure. |
 | E21 | Reviewer queue UI at `/review` | **DONE** | `frontend/src/components/review/ReviewQueue.tsx`; `App.tsx` | Loading, empty, access-denied, error states; confirmation dialog; pagination. |
+| E22 | `DELETE /api/v1/reports/{report_id}` | **DONE** | `routes/reports.py`; `report_deletion.py`; `test_data_deletion.py` | Owner-only hard delete; removes source checkpoints, thread row, and matching note text. `source_thread_id` migration `0005`. |
+| E23 | `DELETE /api/v1/account/data` | **DONE** | `routes/account.py`; `account_erasure.py`; `test_data_deletion.py` | Erases owned reports, threads, checkpoints, and memory; returns counts only on full success; retryable `503`. |
+| E24 | `DELETE /api/v1/chat/memory` | **DONE** | `routes/chat.py`; `chat_memory.py`; live-store test | Deletes only the authenticated picker's namespace. |
 
 ### F. Quality gates and verification
 
 | # | Item | Status | Evidence | Notes |
 |---|---|---|---|---|
-| F1 | Backend test suite | **DONE** | `uv run pytest -o addopts="" --tb=short`: **134 passed** | See §8. |
+| F1 | Backend test suite | **DONE** | `uv run pytest -o addopts="" --tb=short`: **214 passed** | See §8. |
 | F2 | Backend lint | **DONE** | `uv run ruff check .`: all checks passed | Previously red; now green. |
-| F3 | Backend typecheck | **DONE** | `uv run mypy app tests`: success, 62 source files | — |
+| F3 | Backend typecheck | **DONE** | `uv run mypy app tests`: success, 75 source files | — |
 | F4 | Frontend build | **DONE** | `npm run build`: `tsc -b && vite build` succeeded | 97 modules transformed. |
 | F5 | Frontend lint | **PARTIAL** | `npm run lint`: 0 errors, 3 warnings (`react/set-state-in-effect`) | Non-blocking; worth cleaning before adding tests. |
 | F6 | Frontend tests | **NOT STARTED** | No test script or test files | No component, hook, or e2e coverage. |
-| F7 | Integration tests against real PostgreSQL | **DONE** | `tests/test_price_integration.py` (5), `tests/test_report_review_integration.py` (7) | Use the configured real database, skip if unavailable, roll back or delete their own rows. |
+| F7 | Integration tests against real PostgreSQL | **DONE** | `tests/test_price_integration.py` (5), `tests/test_report_review_integration.py` (7), `tests/test_data_deletion.py` (12) | The deletion suite also exercises live `AsyncPostgresSaver` and `AsyncPostgresStore`; it deletes only uniquely identified rows and namespaces. |
 | F8 | CI pipeline | **NOT STARTED** | No `.github` or other CI config | Quality gates are manual. |
 | F9 | README/setup accuracy | **DONE** | README documents the uvicorn `--loop app.loops:selector_loop_factory` command | The deleted `run.py` is no longer referenced; `loops.py` is used. |
 | F10 | Live model/agent end-to-end verification | **PARTIAL** | Keys exist in ignored local `backend/.env`; no live LLM call made in this audit | Provider/auth behavior cannot be claimed without exercising it. |
@@ -344,40 +347,42 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 ### 5.8 Chat threads, history, and API
 
 - **Purpose:** Server-owned per-picker conversations.
-- **Data:** `chat_threads` row per conversation; checkpoints per `thread_id`; memory per `picker_id`.
+- **Data:** `chat_threads` row per conversation; checkpoints per `thread_id`; memory per `picker_id`; reports may point at their source thread via `source_thread_id`.
 - **Ownership:** `get_thread`/`list_threads` filter by user id; routes verify ownership before history/delete.
-- **Gaps:** no pagination; thread creation before agent invocation can leave an empty thread; no idempotency for retries; no streaming; full graph state is loaded for history.
+- **Deletion:** thread delete removes that conversation's checkpoints and row but not reports or memory. `DELETE /chat/memory` removes only notes. `DELETE /reports/{id}` hard-deletes one owned report and its source conversation. `DELETE /account/data` removes all owned data. `CHAT_RETENTION_DAYS` plus `python -m app.services.retention` deletes expired threads and checkpoints.
+- **Gaps:** no pagination; thread creation before agent invocation can leave an empty thread; no idempotency for retries; no streaming; full graph state is loaded for history; no scheduler for retention.
 
 ### 5.9 Reports persistence
 
 - **Purpose:** Store finalized reports attributed to the authenticated picker.
-- **Behavior:** validates again, inserts `status="flagged"` if anomalous else `"accepted"`, stores `observed_at`, `reviewed_at`, and `reviewed_by`.
+- **Behavior:** validates again, inserts `status="flagged"` if anomalous else `"accepted"`, stores `observed_at`, `reviewed_at`, `reviewed_by`, and the source thread id when available.
+- **Deletion:** an owner can hard-delete a report. The numeric observation stops contributing to future estimates and anomaly baselines; existing estimates are not persisted and are not rewritten.
 - **Read paths:** price aggregation and reviewer queue use SQLAlchemy async sessions; integration tests exercise the real database.
 - **Gap:** `save_report` opens its own `SessionLocal` rather than accepting an injected session, which limits transaction composition.
 
 ### 5.10 Frontend
 
 - **Purpose:** Clerk-authenticated chat, price-check, and reviewer UI.
-- **Features:** sign-in, thread list/search/grouping, new chat, history load, delete with confirmation, retry banner, copy message, markdown/table/code rendering, mobile drawer, dark/light theme, landing page, dev-only demo mode, price-check dialog, reviewer queue.
+- **Features:** sign-in, thread list/search/grouping, new chat, history load, delete with confirmation, retry banner, copy message, markdown/table/code rendering, mobile drawer, dark/light theme, landing page, dev-only demo mode, price-check dialog, reviewer queue, and a Privacy & data dialog for deleting saved notes or all account data.
 - **Gaps:** no voice, no camera, no offline/PWA, no tests, no e2e. Text-only capture.
 - **Quality:** build passes; lint has 3 non-blocking React warnings.
 
 ### 5.11 Configuration and environment
 
 - **Key code:** `core/config.py`.
-- **Env vars:** `ENVIRONMENT`, `DEBUG`, `DATABASE_URL`, `DATABASE_ECHO`, `XKIRO_API_KEY`, `XKIRO_BASE_URL`, `XKIRO_MODEL`, `USE_LLM_REASONING`, `ANOMALY_*`, `PRICE_*`, `CORS_ORIGINS`, `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `CLERK_AUTHORIZED_PARTIES`, `ADMIN_USER_IDS`.
+- **Env vars:** `ENVIRONMENT`, `DEBUG`, `DATABASE_URL`, `DATABASE_ECHO`, `XKIRO_API_KEY`, `XKIRO_BASE_URL`, `XKIRO_MODEL`, `USE_LLM_REASONING`, `ANOMALY_*`, `PRICE_*`, `CHAT_RETENTION_DAYS`, `CORS_ORIGINS`, `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `CLERK_AUTHORIZED_PARTIES`, `ADMIN_USER_IDS`.
 - **Behavior:** `get_settings()` is `lru_cache`d; some modules call it at import time, so `.env` changes require a process restart and tests can inherit local values.
 - **Docs:** `.env.example` and README now document the LLM and anomaly settings, including `USE_LLM_REASONING`.
 
 ### 5.12 Operations / deployment
 
-- **Present:** `docker-compose.yml` for PostgreSQL 17; `.env.example`; Alembic migrations through `0004`; `uv.lock`.
+- **Present:** `docker-compose.yml` for PostgreSQL 17; `.env.example`; Alembic migrations through `0005`; `uv.lock`; operator retention command.
 - **Absent:** backend/frontend Dockerfiles, CI, production process config, reverse proxy, TLS, backup/retention jobs, observability/metrics, rate limiting.
-- **Live local DB:** Docker Compose reports the DB healthy; Alembic is at `0004_add_report_anomaly_outcome (head)`.
+- **Live local DB:** Docker Compose reports the DB healthy; Alembic is at `0005_add_report_source_thread (head)`.
 
 ### 5.13 Tests
 
-- **Backend:** 202 tests; all pass. Coverage includes auth, validation, MAD behavior, cold-start pending evidence and re-evaluation, ML readiness, graph routing, price aggregation, price API, reviewer actions, and real PostgreSQL price/review integration.
+- **Backend:** 214 tests; all pass. Coverage includes auth, validation, MAD behavior, cold-start pending evidence and re-evaluation, ML readiness, graph routing, price aggregation, price API, reviewer actions, and real PostgreSQL price/review/deletion integration. The deletion suite covers ownership isolation, live checkpoint/store deletion, report hard delete, account-erasure retry, and retention cleanup.
 - **Frontend:** none.
 - **Not covered:** live model/provider calls, full agent → subagent → persistence routing, multi-turn clarification, retention, rate limiting, prompt injection, performance.
 - **Consequence:** the highest-risk remaining wiring gaps are coordinator routing and live provider behavior.
@@ -390,7 +395,7 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 
 | Table | Created by | Purpose | Key columns / constraints |
 |---|---|---|---|
-| `reports` | Alembic `0001`, extended by `0003` | Finalized sale reports | `id` UUID PK; `picker_id` String(128) indexed; `raw_text` Text; `material`; `price_per_kg` Numeric(12,2) > 0; `quantity_kg` Numeric(12,3) > 0; `currency` String(3) default PKR; `city`, `area`; `observed_at`; `confidence` Float; `is_anomalous` Bool; `anomaly_reason` Text; `anomaly_method` String(20); `status` String(20) indexed; `reviewed_at`, `reviewed_by`; `created_at`, `updated_at`. Indexes: `(picker_id, created_at)`, `picker_id`, `status`. |
+| `reports` | Alembic `0001`, extended by `0003` and `0005` | Finalized sale reports | `id` UUID PK; `picker_id` String(128) indexed; `raw_text` Text; `material`; `price_per_kg` Numeric(12,2) > 0; `quantity_kg` Numeric(12,3) > 0; `currency` String(3) default PKR; `city`, `area`; `observed_at`; `confidence` Float; `is_anomalous` Bool; `anomaly_reason` Text; `anomaly_method` String(20); `status` String(20) indexed; `reviewed_at`, `reviewed_by`, `source_thread_id`; `created_at`, `updated_at`. Indexes: `(picker_id, created_at)`, `picker_id`, `status`. |
 | `chat_threads` | Alembic `0002` | Server-owned conversation threads | `id` UUID PK; `user_id` String(128) indexed; `title` String(200) default "New chat"; `created_at`, `updated_at`. Index `(user_id, updated_at)`. |
 | `checkpoints` | LangGraph `AsyncPostgresSaver.setup()` | Graph checkpoints | Managed by LangGraph. |
 | `checkpoint_blobs` | LangGraph setup | Checkpoint channel blobs | Managed by LangGraph. |
@@ -398,7 +403,7 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 | `checkpoint_migrations` | LangGraph setup | Checkpoint schema version | Managed by LangGraph. |
 | `store` | LangGraph `AsyncPostgresStore.setup()` | Long-term memory/files | Managed by LangGraph; per-picker namespace. |
 | `store_migrations` | LangGraph setup | Store schema version | Managed by LangGraph. |
-| `alembic_version` | Alembic | Migration state | Currently `0003_add_anomaly_review_fields`. |
+| `alembic_version` | Alembic | Migration state | Currently `0005_add_report_source_thread`. |
 
 **Missing tables:** `users`/pickers, `seed_prices` (file-based today), `market_prices`/aggregates (computed on demand), `dealer_quotes`, separate `anomaly_flags`/`review_actions` audit tables, `report_revisions`, `voice_notes`, `classifier_predictions`, `forecasts`.
 
@@ -414,12 +419,15 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 - `save_report`: write path with re-validation; `fetch_reports_for_pricing` and `fetch_comparable_reports`: bounded read paths; `list_reports_for_review`, `get_report_for_review`, `review_report`: reviewer paths.
 - `PriceService` + `evaluate_price`: deterministic price read model.
 - `load_thread_messages`: reads graph state via `aget_state`.
-- `delete_picker_memory`: explicit store-namespace erasure; no automatic retention service or seed import script.
+- `delete_picker_memory`: explicit store-namespace erasure.
+- `delete_owned_report`: owner-scoped hard report deletion plus source-thread checkpoints and targeted note cleanup.
+- `erase_account_data`: retry-safe full erasure of owned reports, threads, checkpoints, and notes.
+- `purge_expired_chat_threads`: operator-invoked chat retention; no scheduler or seed import script.
 
 ### 6.4 Live database verification
 
 - `docker compose ps`: `scrap_sense-db-1` running, healthy, port 5432.
-- `uv run alembic current`: `0003_add_anomaly_review_fields (head)`.
+- `uv run alembic current`: `0005_add_report_source_thread (head)`.
 - The integration tests insert rows, exercise the real service/API, then roll back or delete only their own rows. They do not rely on pre-existing development rows.
 
 ---
@@ -457,18 +465,18 @@ All routes are mounted under `/api/v1`. Health routes are unauthenticated; chat 
 # Backend test suite
 cd D:\scrap_sense\backend
 uv run pytest -o addopts="" --tb=short
-# 134 collected, 134 passed, 0 failed, 0 skipped, 0 collection errors
-# Completed in 30.05s
+# 214 collected, 214 passed, 0 failed, 0 skipped, 0 collection errors
+# Completed in 58.28s
 
 uv run ruff check .
 # All checks passed!
 
 uv run mypy app tests
-# Success: no issues found in 62 source files
+# Success: no issues found in 75 source files
 
 cd D:\scrap_sense\frontend
 npm run lint
-# 0 errors, 3 warnings (react/set-state-in-effect at Chat.tsx:176, Chat.tsx:205, ChatView.tsx:567)
+# 0 errors, 3 warnings (react/set-state-in-effect at Chat.tsx:179, Chat.tsx:208, ChatView.tsx:592)
 
 npm run build
 # Success: tsc -b && vite build; 97 modules transformed
@@ -482,7 +490,7 @@ docker compose ps
 
 cd D:\scrap_sense\backend
 uv run alembic current
-# 0003_add_anomaly_review_fields (head)
+# 0005_add_report_source_thread (head)
 ```
 
 Per-file results:
@@ -546,7 +554,7 @@ Per-file results:
 3. **Provenance is weaker than documented.** The isolated compiled subagent receives the coordinator's `description`, and the pipeline saves the first HumanMessage as `raw_text`; it may not be the picker's verbatim text.
 4. **Multi-turn clarification is unresolved.** Extraction reads only the last message and does not merge an earlier draft.
 5. **No live end-to-end verification.** Coordinator routing, subagent invocation, persistence, and provider behavior are not covered by an integration test.
-6. **No automatic retention, rate limiting, or idempotency.** Retried chat requests can create another thread and/or duplicate report; report rows and checkpoints have no automatic expiry. Long-term memory now has an explicit erasure endpoint, but no scheduled cleanup.
+6. **No automatic retention scheduler, rate limiting, or idempotency.** Retried chat requests can create another thread and/or duplicate report. Chat retention is operator-invoked and report/memory expiry is still a policy gap.
 
 ### Medium
 

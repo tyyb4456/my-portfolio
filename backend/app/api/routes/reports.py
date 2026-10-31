@@ -8,14 +8,15 @@ price eligibility.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ClerkUser, require_admin
+from app.api.routes.chat import get_checkpointer, get_memory_store
+from app.auth import ClerkUser, require_admin, require_auth
 from app.db.session import get_session
 from app.schemas.report import (
     ReportQueueItem,
@@ -23,6 +24,10 @@ from app.schemas.report import (
     ReportReviewRequest,
     ReportReviewResponse,
     ReportStatus,
+)
+from app.services.report_deletion import (
+    ReportDeletionStorageError,
+    delete_owned_report,
 )
 from app.services.reports import (
     ReportApprovalNotEligible,
@@ -116,6 +121,60 @@ async def get_report(
             detail="Report not found",
         )
     return ReportQueueItem.model_validate(report)
+
+
+@router.delete(
+    "/{report_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid Clerk session"},
+        status.HTTP_404_NOT_FOUND: {"description": "Report not found"},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Report deletion unavailable"},
+    },
+)
+async def delete_report(
+    report_id: UUID,
+    user: Annotated[ClerkUser, Depends(require_auth)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    checkpointer: Annotated[Any, Depends(get_checkpointer)],
+    store: Annotated[Any, Depends(get_memory_store)],
+) -> Response:
+    """Erase one report owned by the signed-in picker.
+
+    Ownership is enforced with ``picker_id``; a report UUID alone is never proof
+    of authorization. Nonexistent and foreign-owned reports return the same
+    ``404``. The source conversation's checkpoints and thread metadata are
+    removed because the raw message is stored there. Other reports, other
+    conversations, long-term notes that do not contain the message, and other
+    users' data are untouched.
+    """
+    try:
+        deleted = await delete_owned_report(
+            session,
+            report_id=report_id,
+            picker_id=user.user_id,
+            checkpointer=checkpointer,
+            store=store,
+        )
+    except ReportDeletionStorageError:
+        logger.exception("Could not erase report chat history")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Report deletion did not complete; please retry",
+        ) from None
+    except SQLAlchemyError:
+        logger.exception("Report deletion database operation failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Report deletion did not complete; please retry",
+        ) from None
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch(

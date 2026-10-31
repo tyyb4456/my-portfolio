@@ -32,6 +32,7 @@ class Report(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     picker_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_thread_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
 
     material: Mapped[str] = mapped_column(String(100), nullable=False)
     price_per_kg: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -309,7 +309,7 @@ async def test_verified_seed_price_is_pricing_evidence_not_tier1_evidence(
                         "unit": "kg",
                         "source": "fixture audited field visit, not live data",
                         "collector": "fixture collector",
-                        "collected_at": date.today().isoformat(),
+                        "collected_at": datetime.now(UTC).date().isoformat(),
                     }
                 ],
             }

@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     price_duplicate_window_minutes: int = Field(default=15, ge=0)
     price_seed_prices_path: Path = BACKEND_DIR / "app" / "data" / "seed_prices.json"
 
+    # Operator-invoked chat retention. Zero disables the cleanup command. This is
+    # not a background scheduler; deployment must run the command periodically.
+    chat_retention_days: int = Field(default=0, ge=0)
+
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     clerk_secret_key: SecretStr | None = None

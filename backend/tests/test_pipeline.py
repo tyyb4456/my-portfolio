@@ -126,6 +126,7 @@ def patch_save_report(
         raw_text: str,
         draft: ReportDraft,
         verdict: AnomalyVerdict,
+        source_thread_id: object = None,
     ) -> FinalReport:
         if captured is not None:
             captured.update(

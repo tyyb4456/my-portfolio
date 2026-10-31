@@ -13,6 +13,9 @@ Included:
 - A `POST /api/v1/chat` endpoint that talks to the main ScrapSense agent
 - Server-owned, per-user chat threads with persisted checkpoints and agent memory in PostgreSQL
 - Chat thread creation, listing, history loading, and deletion scoped to the signed-in user
+- Owner-scoped report deletion, saved-note deletion, and full account-data erasure
+- An operator-invoked chat-retention command driven by `CHAT_RETENTION_DAYS`
+- A Privacy & data dialog in the chat UI for deleting saved notes or all account data
 - A coordinator agent that delegates sale reports to the report-intake subagent
 - An LLM extraction step plus deterministic validation in the intake pipeline
 - A conservative median/MAD anomaly check over comparable historical reports
@@ -52,7 +55,7 @@ backend/
                           chat-thread, and history logic
     tools/               Price-estimator tool used by the main agent
     workflows/           Intake/anomaly LangGraph pipeline and state
-  alembic/               Migrations for application tables (through 0003)
+  alembic/               Migrations for application tables (through 0005)
   tests/                 Unit, API, and real-PostgreSQL integration tests
 frontend/
   src/
@@ -168,6 +171,15 @@ Chat (requires `Authorization: Bearer <Clerk session token>`):
   delete the picker's long-term notes or any report rows.
 - `DELETE /api/v1/chat/memory` erases the signed-in picker's long-term agent notes. Notes are
   shared across that picker's threads, so this is separate from deleting one thread.
+- `DELETE /api/v1/reports/{report_id}` hard-deletes one report owned by the signed-in picker. It also
+  removes that report's source conversation and saved-note text. Foreign and missing ids both return
+  `404`. The numeric observation stops contributing to future price estimates; past estimates are not
+  stored and are not rewritten.
+- `DELETE /api/v1/account/data` erases every report, thread, checkpoint, and saved note owned by the
+  signed-in picker and returns counts only after all stages succeed. A `503` response is safe to retry.
+- An operator can set `CHAT_RETENTION_DAYS` and run `uv run python -m app.services.retention` from
+  `backend/` to delete expired chat threads and their checkpoints. `0` disables it; this repository
+  does not install a scheduler.
 
 ```json
 {
@@ -275,13 +287,14 @@ Statuses are the existing report lifecycle, not a second parallel state system:
   eligible for price aggregation only when its stored `anomaly_outcome` is `pass`, or when a
   reviewer approved a `suspicious` result (which sets `reviewed_at`). `reviewed_at` is null when the
   decision was automatic and set when a reviewer approved it.
-- `flagged` — statistically suspicious or awaiting review. It is persisted, never deleted, and
-  excluded from price aggregation until a reviewer approves it.
+- `flagged` — statistically suspicious or awaiting review. It is persisted and excluded from price
+  aggregation until a reviewer approves it; the owner may delete it.
 - `pending_evidence` — structurally valid but Tier 1 had too little comparable history. It is
   persisted, never treated as a pass, and excluded from pricing and anomaly baselines until an
   explicit re-evaluation with the same deterministic algorithm succeeds. A reviewer may reject it
   for disposal but cannot approve it without re-evaluation.
-- `rejected` — a reviewer rejected it. It is retained for audit but never eligible.
+- `rejected` — a reviewer rejected it. It is retained for audit until the owner deletes it or an
+  operator removes it, and it is never eligible for pricing.
 
 Deterministic validation runs before any anomaly tier and rejects missing fields, unsupported
 materials, non-finite or non-positive prices/quantities, unsupported currency/unit combinations,
@@ -352,18 +365,20 @@ npm run build
 
 The price and review integration tests run against the configured PostgreSQL database. Start it
 with `docker compose up -d db` and apply migrations with `uv run alembic upgrade head`; without a
-reachable database those tests skip instead of failing. The suite currently contains 202 tests.
+reachable database those tests skip instead of failing. The suite currently contains 214 tests, including live LangGraph checkpoint/store deletion coverage.
 
 ## Known limitations
 
 - Submitted raw text is sent verbatim to the configured model provider.
 - Chat checkpoints and agent memory are persisted in PostgreSQL. Deleting a thread removes its
   checkpoints; the picker's long-term `/memories/picker_notes.md` memory is shared across that
-  picker's threads and is erased by `DELETE /api/v1/chat/memory`. There is no automatic retention
-  or scheduled deletion job yet.
-- Report rows keep the raw message and the Clerk-derived picker id until an operator removes them.
-  There is no self-service report-erasure endpoint and no automatic expiry. A proposed policy
-  (not implemented) is described in `SECURITY_AND_PRIVACY.md`.
+  picker's threads and is erased by `DELETE /api/v1/chat/memory` or account erasure. Chat retention
+  is operator-invoked, not scheduled in this repository.
+- Report rows keep the raw message and the Clerk-derived picker id until the owner deletes the report,
+  erases account data, or an operator removes them. There is no automatic report-text expiry; a
+  proposed policy is described in `SECURITY_AND_PRIVACY.md`.
+- The Privacy & data dialog exposes note deletion and full account erasure. Deleting one conversation
+  intentionally leaves submitted reports in the pooled price evidence.
 - Raw messages, checkpoints, and notes are stored unencrypted at the application layer; database
   and backup encryption are deployment responsibilities and are not configured in this repository.
 - Price evidence is thin until enough pickers report. The published seed file is empty, so with
@@ -379,7 +394,8 @@ reachable database those tests skip instead of failing. The suite currently cont
 - Report freshness uses the extracted sale time when present, otherwise the row's `created_at`.
   The report schema is PKR/kg only; other currencies are excluded rather than converted.
 - Migration `0003_add_anomaly_review_fields` adds `observed_at`, `reviewed_at`, and `reviewed_by`.
-  Run `uv run alembic upgrade head` after pulling this change.
+  Migration `0005_add_report_source_thread` adds `reports.source_thread_id`. Run
+  `uv run alembic upgrade head` after pulling this change.
 - Identical reports are collapsed only inside the configurable short window. The schema has no
   durable idempotency key, so unrelated duplicate submissions outside that window are still
   counted separately.

@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
+  deleteAccountData,
+  deleteMemory,
   deleteThread,
   errorMessage,
   getThreadMessages,
   listThreads,
   sendMessage,
+  type AccountDataErasureResponse,
   type ChatThread,
 } from '../lib/api'
 import { useAccessToken } from '../lib/useAccessToken'
@@ -361,6 +364,22 @@ function LiveChat({ accountSlot }: { accountSlot?: ReactNode }) {
     }
   }
 
+  async function handleEraseMemory(): Promise<void> {
+    const token = await getToken()
+    await deleteMemory(token)
+  }
+
+  async function handleEraseAccountData(): Promise<AccountDataErasureResponse> {
+    const token = await getToken()
+    const result = await deleteAccountData(token)
+    pendingRef.current = null
+    setThreads([])
+    setMessages([])
+    setActiveThreadId(null)
+    setLoadingMessages(false)
+    return result
+  }
+
   function handleRetry() {
     if (sendingRef.current) {
       return
@@ -410,6 +429,8 @@ function LiveChat({ accountSlot }: { accountSlot?: ReactNode }) {
       onSelectThread={handleSelectThread}
       onDeleteThread={handleDeleteThread}
       onRefreshThreads={handleRefreshThreads}
+      onEraseMemory={handleEraseMemory}
+      onEraseAccountData={handleEraseAccountData}
     />
   )
 }

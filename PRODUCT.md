@@ -53,6 +53,9 @@ Built today:
 
 - Clerk-authenticated chat on the frontend and backend; the Clerk `sub` claim is the picker id.
 - `POST /api/v1/chat` with server-owned, per-picker threads, persisted history, and deletion.
+- Owner-scoped deletion of one report, all saved notes, or all account data. Report deletion removes
+  the source conversation and matching note text and stops the observation from affecting future
+  estimates; it does not rewrite historical estimates, which are not persisted.
 - A coordinator agent that delegates sale reports to a report-intake subagent.
 - LLM structured extraction plus deterministic validation of intake reports, with uncertain fields
   flagged rather than guessed.
@@ -79,7 +82,10 @@ Constraints and terminology:
 
 - Chat checkpoints and per-picker long-term memory live in PostgreSQL. Deleting a thread removes
   that thread's checkpoints but does not delete `/memories/picker_notes.md`; the explicit
-  `DELETE /api/v1/chat/memory` path erases those notes.
+  `DELETE /api/v1/chat/memory` path erases those notes. Account-data erasure removes every owned
+  report, thread, checkpoint, and note. The Privacy & data dialog exposes the user-facing controls.
+- An operator may set `CHAT_RETENTION_DAYS` and run the retention command to delete expired chat
+  threads. There is no scheduler or automatic expiry for reports or memory.
 - Raw report text is sent verbatim to the configured model provider.
 - Identity is a pseudonymous picker id derived from the Clerk `sub` claim. It is linkable to the
   signed-in account and is not an anonymous identity. Location is stored at neighborhood/city

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from typing import Any
 
 from langchain_core.messages import AIMessage
@@ -428,6 +429,18 @@ def _picker_id_from_config(config: RunnableConfig) -> str:
     return thread_id if isinstance(thread_id, str) and thread_id else "unknown"
 
 
+def _source_thread_id_from_config(config: RunnableConfig) -> uuid.UUID | None:
+    """Return the server-owned thread UUID that produced this report, if valid."""
+    configurable = config.get("configurable") or {}
+    value = configurable.get("thread_id")
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        return None
+
+
 def _tier1_completed(state: PipelineState) -> bool:
     return tier1_check_completed(state.get("deterministic_result"))
 
@@ -583,6 +596,7 @@ async def finalize_report_node(
             raw_text=raw_text,
             draft=draft,
             verdict=verdict,
+            source_thread_id=_source_thread_id_from_config(config),
         )
     except Exception as exc:
         logger.warning("Failed to persist final report (%s)", type(exc).__name__)

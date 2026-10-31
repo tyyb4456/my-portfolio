@@ -98,6 +98,7 @@ async def save_report(
     raw_text: str,
     draft: ReportDraft,
     verdict: AnomalyVerdict,
+    source_thread_id: UUID | None = None,
 ) -> FinalReport:
     """Store a validated report and return its persisted representation.
 
@@ -133,6 +134,7 @@ async def save_report(
     report = Report(
         picker_id=picker_id,
         raw_text=raw_text,
+        source_thread_id=source_thread_id,
         material=draft.material,
         price_per_kg=draft.price_per_kg,
         quantity_kg=draft.quantity_kg,

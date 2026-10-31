@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
-import type { ChatThread } from '../../lib/api'
+import { errorMessage, type AccountDataErasureResponse, type ChatThread } from '../../lib/api'
 import { ThemeToggle } from '../ThemeToggle'
 import { groupThreads, relativeTime } from './format'
 import {
@@ -58,6 +58,7 @@ interface SidebarContentProps {
   onSearch: (value: string) => void
   onNewChat: () => void
   onSelectThread: (threadId: string) => void
+  onOpenPrivacy?: () => void
   onClose?: () => void
 }
 
@@ -74,6 +75,7 @@ function SidebarContent({
   onSearch,
   onNewChat,
   onSelectThread,
+  onOpenPrivacy,
   onClose,
 }: SidebarContentProps) {
   const searchId = useId()
@@ -214,15 +216,28 @@ function SidebarContent({
           <ThemeToggle className="-mr-1" />
         </div>
         {!demo ? (
-          <a
-            href="/review"
-            aria-label="Open reviewer queue"
-            className="clay-row mt-2 flex min-h-11 items-center gap-2 px-3 py-2 text-[12px] font-medium text-ink"
-          >
-            <ShieldIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-            <span className="min-w-0 flex-1 truncate">Review queue</span>
-            <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-          </a>
+          <>
+            <a
+              href="/review"
+              aria-label="Open reviewer queue"
+              className="clay-row mt-2 flex min-h-11 items-center gap-2 px-3 py-2 text-[12px] font-medium text-ink"
+            >
+              <ShieldIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+              <span className="min-w-0 flex-1 truncate">Review queue</span>
+              <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+            </a>
+            {onOpenPrivacy ? (
+              <button
+                type="button"
+                onClick={onOpenPrivacy}
+                className="clay-row mt-2 flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-medium text-ink"
+              >
+                <ShieldIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate">Privacy &amp; data</span>
+                <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+              </button>
+            ) : null}
+          </>
         ) : null}
       </div>
     </div>
@@ -509,12 +524,19 @@ export function ChatView({
   onSelectThread,
   onDeleteThread,
   onRefreshThreads,
+  onEraseMemory,
+  onEraseAccountData,
 }: ChatViewProps) {
   const [draft, setDraft] = useState('')
   const [search, setSearch] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [privacyOpen, setPrivacyOpen] = useState(false)
+  const [privacyBusy, setPrivacyBusy] = useState<'memory' | 'account' | null>(null)
+  const [privacyError, setPrivacyError] = useState<string | null>(null)
+  const [privacyNotice, setPrivacyNotice] = useState<string | null>(null)
+  const [confirmAccount, setConfirmAccount] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [showJump, setShowJump] = useState(false)
   const [priceOpen, setPriceOpen] = useState(false)
@@ -525,6 +547,7 @@ export function ChatView({
   const drawerRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const privacyCloseRef = useRef<HTMLButtonElement>(null)
   const atBottomRef = useRef(true)
   const lastCountRef = useRef(0)
   const copyTimerRef = useRef<number | null>(null)
@@ -580,7 +603,12 @@ export function ChatView({
       }
 
       if (event.key === 'Escape') {
-        if (confirmOpen) {
+        if (privacyOpen) {
+          if (privacyBusy === null) {
+            setPrivacyOpen(false)
+            setConfirmAccount(false)
+          }
+        } else if (confirmOpen) {
           setConfirmOpen(false)
         } else if (drawerOpen) {
           setDrawerOpen(false)
@@ -590,7 +618,7 @@ export function ChatView({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [confirmOpen, drawerOpen, onNewChat])
+  }, [confirmOpen, drawerOpen, onNewChat, privacyBusy, privacyOpen])
 
   useEffect(() => {
     if (!drawerOpen) {
@@ -604,6 +632,14 @@ export function ChatView({
       window.clearTimeout(timer)
     }
   }, [drawerOpen])
+
+  useEffect(() => {
+    if (!privacyOpen) {
+      return
+    }
+    const timer = window.setTimeout(() => privacyCloseRef.current?.focus(), 30)
+    return () => window.clearTimeout(timer)
+  }, [privacyOpen])
 
   useEffect(() => {
     if (!confirmOpen) {
@@ -697,6 +733,67 @@ export function ChatView({
     }
   }
 
+  function openPrivacy() {
+    setDrawerOpen(false)
+    setConfirmAccount(false)
+    setPrivacyError(null)
+    setPrivacyNotice(null)
+    setPrivacyOpen(true)
+  }
+
+  function closePrivacy() {
+    if (privacyBusy) {
+      return
+    }
+    setPrivacyOpen(false)
+    setConfirmAccount(false)
+    setPrivacyError(null)
+    setPrivacyNotice(null)
+  }
+
+  async function handleEraseMemory() {
+    if (!onEraseMemory || privacyBusy || sending) {
+      return
+    }
+    setPrivacyBusy('memory')
+    setPrivacyError(null)
+    setPrivacyNotice(null)
+    try {
+      await onEraseMemory()
+      setPrivacyNotice('Saved notes deleted. Your conversations and report amounts are unchanged.')
+    } catch (eraseError) {
+      setPrivacyError(errorMessage(eraseError))
+    } finally {
+      setPrivacyBusy(null)
+    }
+  }
+
+  async function handleEraseAccountData() {
+    if (!onEraseAccountData || privacyBusy || sending) {
+      return
+    }
+    setPrivacyBusy('account')
+    setPrivacyError(null)
+    setPrivacyNotice(null)
+    try {
+      const result: AccountDataErasureResponse = await onEraseAccountData()
+      setConfirmAccount(false)
+      setPrivacyNotice(
+        `Account data erased: ${result.reports_deleted} report${
+          result.reports_deleted === 1 ? '' : 's'
+        }, ${result.threads_deleted} conversation${
+          result.threads_deleted === 1 ? '' : 's'
+        }, and ${result.memory_items_deleted} saved note${
+          result.memory_items_deleted === 1 ? '' : 's'
+        }.`,
+      )
+    } catch (eraseError) {
+      setPrivacyError(errorMessage(eraseError))
+    } finally {
+      setPrivacyBusy(null)
+    }
+  }
+
   return (
     <div className="flex h-svh overflow-hidden bg-surface">
       <aside className="hidden h-full w-[264px] shrink-0 bg-ground lg:block">
@@ -711,6 +808,7 @@ export function ChatView({
           onSearch={setSearch}
           onNewChat={handleNewChat}
           onSelectThread={handleSelectThread}
+          onOpenPrivacy={demo ? undefined : openPrivacy}
         />
       </aside>
 
@@ -934,6 +1032,7 @@ export function ChatView({
               onSearch={setSearch}
               onNewChat={handleNewChat}
               onSelectThread={handleSelectThread}
+              onOpenPrivacy={demo ? undefined : openPrivacy}
               onClose={() => setDrawerOpen(false)}
             />
           </div>
@@ -983,6 +1082,153 @@ export function ChatView({
                 {deleting ? 'Deleting…' : 'Delete report'}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {privacyOpen && onEraseMemory && onEraseAccountData ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={closePrivacy}
+            aria-label="Close privacy settings"
+            className="drawer-overlay absolute inset-0 bg-scrim"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="privacy-title"
+            className="clay-card dialog-panel relative max-h-[86svh] w-full max-w-[460px] overflow-y-auto p-5"
+          >
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <h2
+                  id="privacy-title"
+                  className="text-[16px] font-semibold tracking-[-0.01em] text-ink"
+                >
+                  Privacy &amp; data
+                </h2>
+                <p className="mt-1 text-[12px] leading-5 text-muted">
+                  Control what ScrapSense keeps. Report amounts stay anonymous; conversations,
+                  checkpoints, and saved notes are tied to your account ID.
+                </p>
+              </div>
+              <button
+                ref={privacyCloseRef}
+                type="button"
+                onClick={closePrivacy}
+                disabled={privacyBusy !== null}
+                aria-label="Close privacy settings"
+                className="clay-icon-button flex h-11 w-11 shrink-0 items-center justify-center text-muted hover:text-ink"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            {privacyNotice ? (
+              <p
+                role="status"
+                className="clay-inset mt-4 flex items-start gap-2 px-3 py-2 text-[12px] leading-5 text-ink"
+              >
+                <CheckIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
+                {privacyNotice}
+              </p>
+            ) : null}
+
+            {privacyError ? (
+              <p
+                role="alert"
+                className="clay-inset mt-4 flex items-start gap-2 px-3 py-2 text-[12px] leading-5 text-ink"
+              >
+                <span
+                  className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-negative"
+                  aria-hidden="true"
+                />
+                {privacyError}
+              </p>
+            ) : null}
+
+            {confirmAccount ? (
+              <div className="clay-inset mt-4 px-4 py-4">
+                <p className="text-[13px] font-semibold leading-5 text-ink">
+                  Erase all your ScrapSense data?
+                </p>
+                <p className="mt-1.5 text-[12px] leading-5 text-muted">
+                  Every report, conversation, chat checkpoint, and saved note linked to your
+                  account ID will be deleted. This cannot be undone. Your Clerk sign-in and
+                  provider or backup copies are handled separately.
+                </p>
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAccount(false)}
+                    disabled={privacyBusy !== null || sending}
+                    className="clay-button clay-button-secondary h-11 px-4 text-[13px] font-medium text-ink sm:h-9 sm:px-3"
+                  >
+                    Keep my data
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleEraseAccountData}
+                    disabled={privacyBusy !== null || sending}
+                    className="clay-button clay-button-danger h-11 px-4 text-[13px] font-medium text-on-negative sm:h-9 sm:px-3"
+                  >
+                    {privacyBusy === 'account' ? 'Erasing?' : 'Yes, erase everything'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2">
+                <section className="clay-inset px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium leading-5 text-ink">Saved notes</p>
+                      <p className="mt-1 text-[12px] leading-5 text-muted">
+                        Facts the assistant remembered across your conversations. Reports and
+                        conversations stay.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleEraseMemory}
+                      disabled={privacyBusy !== null || sending}
+                      className="clay-button clay-button-secondary h-11 shrink-0 px-3 text-[12px] font-medium text-ink sm:h-9"
+                    >
+                      {privacyBusy === 'memory' ? 'Deleting?' : 'Delete notes'}
+                    </button>
+                  </div>
+                </section>
+
+                <section className="clay-inset px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium leading-5 text-ink">All my data</p>
+                      <p className="mt-1 text-[12px] leading-5 text-muted">
+                        Every report, conversation, checkpoint, and saved note linked to your
+                        account ID. This cannot be undone.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrivacyError(null)
+                        setPrivacyNotice(null)
+                        setConfirmAccount(true)
+                      }}
+                      disabled={privacyBusy !== null || sending}
+                      className="clay-button clay-button-danger h-11 shrink-0 px-3 text-[12px] font-medium text-on-negative sm:h-9"
+                    >
+                      Erase all
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            <p className="mt-4 text-[11px] leading-4 text-muted">
+              Deleting a conversation only removes its chat history. Submitted reports stay in the
+              pooled price evidence unless you erase all data.
+            </p>
           </div>
         </div>
       ) : null}
