@@ -199,7 +199,7 @@ forecasting, and the offline gap-analysis loop are not. See §9 and `IMPLEMENTAT
 - ✓ Reviewer flow — `GET /api/v1/reports` queue, `GET /api/v1/reports/{id}`, and
   `PATCH /api/v1/reports/{id}/review` are restricted to `ADMIN_USER_IDS`; the `/review` UI has
   pagination, empty/access-denied/error states, and confirmation before approval or rejection
-- ✓ Verification — 214 backend tests pass, including real-PostgreSQL price/review/deletion and live LangGraph storage integration;
+- ✓ Verification — 219 backend tests pass, including real-PostgreSQL price/review/deletion and live LangGraph storage integration;
   ruff and mypy pass; the frontend lint and production build pass
 - ☐ Seed data — loader and empty file exist; no verified week-1 entries collected yet
 - ☐ Classifier agent — not present, not even a stub module
@@ -243,17 +243,18 @@ rather than hidden:
   `/memories/picker_notes.md` contents. There is no encryption-at-rest policy yet.
 - **Deletion scopes are separate.** Deleting a thread removes only its checkpoints and row.
   The per-user `/memories/picker_notes.md` is shared across that user's threads and is erased by
-  `DELETE /api/v1/chat/memory`. Deleting a report hard-deletes the row, its source conversation,
-  and matching notes. Account erasure removes every owned report, thread, checkpoint, and note.
-  The Privacy & data dialog exposes notes and account erasure.
+  `DELETE /api/v1/chat/memory`. Deleting a report hard-deletes the row, redacts its text from notes
+  without removing unrelated notes, and removes its source conversation only when no other report
+  still uses it. Account erasure removes every owned report, thread, picker-attributed checkpoint
+  (including orphans), and note. The Privacy & data dialog exposes notes and account erasure.
 - **Thin market evidence and no verified seed entries.** Reports are now aggregated into
   price references, but low report volume and the empty seed file mean many requests
   correctly return `unavailable`. The schema stores PKR/kg only; an optional sale time is stored
   in `observed_at` and falls back to `created_at` when absent.
 - **No automatic retention.** Checkpoints, memories, and report rows accumulate until an explicit
   deletion or account erasure. An operator can set `CHAT_RETENTION_DAYS` and run the retention
-  command for expired chat threads, but no scheduler is installed and report/memory expiry is
-  still a policy gap.
+  command for expired chat threads and orphan checkpoint threads, but no scheduler is installed and
+  report/memory expiry is still a policy gap.
 - **No rate limiting or durable idempotency.** A retried chat request can create another thread
   and/or duplicate a report; duplicate suppression in price aggregation is only a short-window
   guard, not a submission-level guarantee.

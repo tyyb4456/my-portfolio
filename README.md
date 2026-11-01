@@ -172,14 +172,15 @@ Chat (requires `Authorization: Bearer <Clerk session token>`):
 - `DELETE /api/v1/chat/memory` erases the signed-in picker's long-term agent notes. Notes are
   shared across that picker's threads, so this is separate from deleting one thread.
 - `DELETE /api/v1/reports/{report_id}` hard-deletes one report owned by the signed-in picker. It also
-  removes that report's source conversation and saved-note text. Foreign and missing ids both return
+  redacts that report's raw text from saved notes while keeping unrelated notes, and removes the
+  source conversation only when no other report still uses it. Foreign and missing ids both return
   `404`. The numeric observation stops contributing to future price estimates; past estimates are not
   stored and are not rewritten.
 - `DELETE /api/v1/account/data` erases every report, thread, checkpoint, and saved note owned by the
   signed-in picker and returns counts only after all stages succeed. A `503` response is safe to retry.
 - An operator can set `CHAT_RETENTION_DAYS` and run `uv run python -m app.services.retention` from
-  `backend/` to delete expired chat threads and their checkpoints. `0` disables it; this repository
-  does not install a scheduler.
+  `backend/` to delete expired chat threads, their checkpoints, and orphan checkpoint threads. `0`
+  disables it; this repository does not install a scheduler.
 
 ```json
 {
@@ -365,7 +366,7 @@ npm run build
 
 The price and review integration tests run against the configured PostgreSQL database. Start it
 with `docker compose up -d db` and apply migrations with `uv run alembic upgrade head`; without a
-reachable database those tests skip instead of failing. The suite currently contains 214 tests, including live LangGraph checkpoint/store deletion coverage.
+reachable database those tests skip instead of failing. The suite currently contains 219 tests, including live LangGraph checkpoint/store deletion coverage.
 
 ## Known limitations
 

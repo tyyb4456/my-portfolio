@@ -134,6 +134,7 @@ def patch_save_report(
                 raw_text=raw_text,
                 draft=draft,
                 verdict=verdict,
+                source_thread_id=source_thread_id,
             )
         return final_report(draft, verdict, picker_id=picker_id, raw_text=raw_text)
 
@@ -798,6 +799,33 @@ async def test_finalize_report_persists_the_report(
     assert output["final_report"].material == "copper"
     assert output["structured_response"] == output["final_report"]
     assert "saved" in output["messages"][0].content.lower()
+
+
+async def test_finalize_report_records_the_source_thread_uuid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    patch_save_report(monkeypatch, captured)
+    thread_id = uuid4()
+
+    await pipeline_module.finalize_report_node(
+        {
+            "messages": [HumanMessage(content="sold 2kg copper at 500 per kg")],
+            "original_message": "sold 2kg copper at 500 per kg",
+            "report_draft": valid_draft(),
+            "deterministic_result": verdict(reason="Price is within range."),
+            "verdict": verdict(reason="Price is within range."),
+        },
+        {
+            "configurable": {
+                "thread_id": str(thread_id),
+                "picker_id": "user_123",
+            }
+        },
+    )
+
+    assert captured["picker_id"] == "user_123"
+    assert captured["source_thread_id"] == thread_id
 
 
 async def test_finalize_report_prefers_authenticated_picker_id(

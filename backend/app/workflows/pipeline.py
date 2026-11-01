@@ -589,6 +589,12 @@ async def finalize_report_node(
             ]
         }
     picker_id = _picker_id_from_config(config)
+    source_thread_id = _source_thread_id_from_config(config)
+    if source_thread_id is None:
+        logger.warning(
+            "Persisting a report without a valid source thread id; it cannot be "
+            "attributed to a conversation for targeted deletion"
+        )
 
     try:
         final_report = await save_report(
@@ -596,7 +602,7 @@ async def finalize_report_node(
             raw_text=raw_text,
             draft=draft,
             verdict=verdict,
-            source_thread_id=_source_thread_id_from_config(config),
+            source_thread_id=source_thread_id,
         )
     except Exception as exc:
         logger.warning("Failed to persist final report (%s)", type(exc).__name__)

@@ -1,4 +1,4 @@
-"""Deletion helpers for a picker's long-term agent memory."""
+"""Deletion and redaction helpers for a picker's long-term agent memory."""
 
 from __future__ import annotations
 
@@ -9,60 +9,124 @@ from app.agents.main_agent import memory_namespace
 _PAGE_SIZE = 100
 _MAX_PAGES = 1000
 
+# Sentinel returned by :func:`_redact` when a value no longer holds any content
+# after the target text is removed. The containing item must then be deleted.
+_DROP = object()
 
-def _value_contains_text(value: object, text: str) -> bool:
-    """Return whether a stored value contains the exact text in any string."""
+
+def _redact(value: object, text: str) -> object:
+    """Return ``value`` with every exact occurrence of ``text`` removed.
+
+    The original object is returned unchanged when it does not contain ``text``.
+    A string that becomes blank, or a container whose children are all dropped,
+    returns ``_DROP``. Containers are only rebuilt when a child actually
+    changes, so unrelated notes keep their exact stored representation.
+    """
     if isinstance(value, str):
-        return text in value
+        if text not in value:
+            return value
+        remaining = value.replace(text, "")
+        if not remaining.strip():
+            return _DROP
+        return remaining
+
     if isinstance(value, dict):
-        return any(
-            _value_contains_text(key, text) or _value_contains_text(item, text)
-            for key, item in value.items()
-        )
-    if isinstance(value, (list, tuple, set)):
-        return any(_value_contains_text(item, text) for item in value)
-    return False
+        changed = False
+        redacted: dict[object, object] = {}
+        for key, item in value.items():
+            new_key = _redact(key, text)
+            new_item = _redact(item, text)
+            if new_key is not key or new_item is not item:
+                changed = True
+            if new_key is _DROP or new_item is _DROP:
+                continue
+            redacted[new_key] = new_item
+        if not changed:
+            return value
+        if not redacted:
+            return _DROP
+        return redacted
+
+    if isinstance(value, (list, tuple)):
+        changed = False
+        redacted_items: list[object] = []
+        for item in value:
+            new_item = _redact(item, text)
+            if new_item is not item:
+                changed = True
+            if new_item is _DROP:
+                continue
+            redacted_items.append(new_item)
+        if not changed:
+            return value
+        if not redacted_items:
+            return _DROP
+        return tuple(redacted_items) if isinstance(value, tuple) else redacted_items
+
+    if isinstance(value, set):
+        changed = False
+        redacted_set: set[object] = set()
+        for item in value:
+            new_item = _redact(item, text)
+            if new_item is not item:
+                changed = True
+            if new_item is _DROP:
+                continue
+            redacted_set.add(new_item)
+        if not changed:
+            return value
+        if not redacted_set:
+            return _DROP
+        return redacted_set
+
+    return value
 
 
-async def delete_memory_items_containing(
+async def redact_memory_items_containing(
     *,
     store: BaseStore,
     picker_id: str,
     text: str,
 ) -> int:
-    """Delete only this picker's memory items that contain an exact text.
+    """Remove an exact text from this picker's memory items, keeping the rest.
 
-    This is a narrow companion to :func:`delete_picker_memory` for report
-    erasure. Notes are shared across a picker's threads, so deleting the whole
-    namespace would remove unrelated notes. Items are looked up page by page;
-    the operation is idempotent and never touches another picker.
+    Long-term notes are a shared, freeform document per picker, so deleting a
+    whole item because it mentions a report would also erase unrelated notes.
+    This redacts only the matching text and deletes an item only when nothing
+    meaningful remains. Values are rewritten in place; other pickers are never
+    touched. The operation is idempotent and returns the number of items
+    modified or deleted.
     """
     if not text:
         return 0
 
     namespace = memory_namespace(picker_id)
-    deleted = 0
+    affected = 0
     offset = 0
 
     for _ in range(_MAX_PAGES):
         items = await store.asearch(namespace, limit=_PAGE_SIZE, offset=offset)
         if not items:
-            return deleted
+            return affected
 
-        removed_on_page = 0
+        changed_on_page = 0
         for item in items:
-            if not _value_contains_text(item.value, text):
+            redacted = _redact(item.value, text)
+            if redacted is item.value:
                 continue
-            await store.adelete(namespace, item.key)
-            deleted += 1
-            removed_on_page += 1
+            if redacted is _DROP or not isinstance(redacted, dict):
+                await store.adelete(namespace, item.key)
+            else:
+                await store.aput(namespace, item.key, redacted)
+            affected += 1
+            changed_on_page += 1
 
-        if removed_on_page:
+        if changed_on_page:
             offset = 0
         else:
             offset += len(items)
 
-    raise RuntimeError("Targeted memory deletion did not complete")
+    raise RuntimeError("Targeted memory redaction did not complete")
 
 
 async def delete_picker_memory(*, store: BaseStore, picker_id: str) -> int:

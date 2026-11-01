@@ -20,7 +20,7 @@ The remaining work is concentrated in the secondary/advanced scope: verified see
 1. **The core price chain is real.** `backend/app/services/prices.py`, `backend/app/services/price_aggregation.py`, `GET /api/v1/prices/estimate`, the `estimate_price` chat tool, and the frontend `PriceCheck` dialog all use the same deterministic rules. Reports are actually read back and aggregated.
 2. **Trust precedes aggregation.** Deterministic validation (`app/services/report_validation.py`), a conservative median/MAD Tier 1 (`app/services/anomaly_detection.py`), persisted `flagged` reports, and a reviewer-only approve/reject flow all exist. Only accepted, non-anomalous reports influence prices.
 3. **Authentication and per-picker isolation are tested.** Clerk bearer verification, the `sub` claim as picker id, server-owned threads, and ownership checks are implemented and covered by API tests.
-4. **The test suite is substantial and green.** 214 backend tests pass, including price, review, and deletion tests that use real PostgreSQL and live LangGraph checkpoint/store tables. `ruff`, `mypy`, the frontend lint, and the production build all run.
+4. **The test suite is substantial and green.** 219 backend tests pass, including price, review, and deletion tests that use real PostgreSQL and live LangGraph checkpoint/store tables. `ruff`, `mypy`, the frontend lint, and the production build all run.
 5. **The documentation is unusually honest.** Missing seed data, the disabled ML tier, the default-off LLM tier, and privacy gaps are stated rather than hidden.
 
 ### Top gaps / risks
@@ -90,12 +90,17 @@ D:\scrap_sense\
 │   │   │   ├── prices.py             DB-backed PriceService and seed-file loader.
 │   │   │   ├── reports.py            Persist, read for pricing, queue, and review decisions.
 │   │   │   ├── chat_threads.py       ChatThreadStore: create/list/get/touch/delete.
-│   │   │   └── chat_history.py       Load human/assistant turns from graph state.
+│   │   │   ├── chat_history.py       Load human/assistant turns from graph state.
+│   │   │   ├── chat_memory.py        Memory namespace erasure and targeted text redaction.
+│   │   │   ├── report_deletion.py    Owner-scoped report deletion with shared-thread guard.
+│   │   │   ├── account_erasure.py    Retry-safe full account-data erasure.
+│   │   │   ├── checkpoint_threads.py Discover picker-attributed and orphan checkpoint threads.
+│   │   │   └── retention.py          Operator-invoked chat retention cleanup.
 │   │   ├── tools\price_estimator.py  Chat tool backed by PriceService.
 │   │   └── workflows\
 │   │       ├── pipeline.py           Intake + validation + anomaly tiers + persistence graph.
 │   │       └── state.py              PipelineState.
-│   └── tests\                        214 tests across 22 files, including real PostgreSQL and live LangGraph storage integration.
+│   └── tests\                        219 tests across 22 files, including real PostgreSQL and live LangGraph storage integration.
 │
 ├── frontend\
 │   ├── package.json                 React 19, TS, Vite 8, Clerk, Tailwind 4, oxlint. No test script.
@@ -162,7 +167,7 @@ D:\scrap_sense\
 - **No forecasting path.** No time-series model or trend logic.
 - **No offline mode.** The app requires PostgreSQL, Clerk, and a live LLM provider for normal use.
 - **No Tier 2 model.** The graph node and readiness gate exist, but no model is trained or loaded.
-- **No automatic expiry scheduler.** Thread deletion, memory deletion, report deletion, and account erasure are explicit actions. `CHAT_RETENTION_DAYS` plus `python -m app.services.retention` cleans expired chat threads, but deployment must schedule it. Report raw text and memory still have no automatic expiry.
+- **No automatic expiry scheduler.** Thread deletion, memory deletion, report deletion, and account erasure are explicit actions. `CHAT_RETENTION_DAYS` plus `python -m app.services.retention` cleans expired chat threads and orphan checkpoint threads, but deployment must schedule it. Report raw text and memory still have no automatic expiry.
 
 ---
 
@@ -262,21 +267,21 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 | E19 | Honest documentation of gaps | **DONE** | Overview, README, PRODUCT, this audit | Docs now match the implemented price/anomaly/review scope. |
 | E20 | `GET /api/v1/prices/estimate` | **DONE** | `routes/prices.py`; `tests/test_prices_api.py` | Auth required; 422 for invalid query; 503 on DB failure. |
 | E21 | Reviewer queue UI at `/review` | **DONE** | `frontend/src/components/review/ReviewQueue.tsx`; `App.tsx` | Loading, empty, access-denied, error states; confirmation dialog; pagination. |
-| E22 | `DELETE /api/v1/reports/{report_id}` | **DONE** | `routes/reports.py`; `report_deletion.py`; `test_data_deletion.py` | Owner-only hard delete; removes source checkpoints, thread row, and matching note text. `source_thread_id` migration `0005`. |
-| E23 | `DELETE /api/v1/account/data` | **DONE** | `routes/account.py`; `account_erasure.py`; `test_data_deletion.py` | Erases owned reports, threads, checkpoints, and memory; returns counts only on full success; retryable `503`. |
+| E22 | `DELETE /api/v1/reports/{report_id}` | **DONE** | `routes/reports.py`; `report_deletion.py`; `test_data_deletion.py` | Owner-only hard delete; redacts the raw text from notes without removing unrelated notes; removes source checkpoints and thread row only when no other report references that thread. `source_thread_id` migration `0005`. |
+| E23 | `DELETE /api/v1/account/data` | **DONE** | `routes/account.py`; `account_erasure.py`; `test_data_deletion.py` | Erases owned reports, threads, checkpoints (including picker-attributed checkpoints with no thread row), and memory; returns counts only on full success; retryable `503`. |
 | E24 | `DELETE /api/v1/chat/memory` | **DONE** | `routes/chat.py`; `chat_memory.py`; live-store test | Deletes only the authenticated picker's namespace. |
 
 ### F. Quality gates and verification
 
 | # | Item | Status | Evidence | Notes |
 |---|---|---|---|---|
-| F1 | Backend test suite | **DONE** | `uv run pytest -o addopts="" --tb=short`: **214 passed** | See §8. |
+| F1 | Backend test suite | **DONE** | `uv run pytest -o addopts="" --tb=short`: **219 passed** | See §8. |
 | F2 | Backend lint | **DONE** | `uv run ruff check .`: all checks passed | Previously red; now green. |
 | F3 | Backend typecheck | **DONE** | `uv run mypy app tests`: success, 75 source files | — |
 | F4 | Frontend build | **DONE** | `npm run build`: `tsc -b && vite build` succeeded | 97 modules transformed. |
 | F5 | Frontend lint | **PARTIAL** | `npm run lint`: 0 errors, 3 warnings (`react/set-state-in-effect`) | Non-blocking; worth cleaning before adding tests. |
 | F6 | Frontend tests | **NOT STARTED** | No test script or test files | No component, hook, or e2e coverage. |
-| F7 | Integration tests against real PostgreSQL | **DONE** | `tests/test_price_integration.py` (5), `tests/test_report_review_integration.py` (7), `tests/test_data_deletion.py` (12) | The deletion suite also exercises live `AsyncPostgresSaver` and `AsyncPostgresStore`; it deletes only uniquely identified rows and namespaces. |
+| F7 | Integration tests against real PostgreSQL | **DONE** | `tests/test_price_integration.py` (5), `tests/test_report_review_integration.py` (7), `tests/test_data_deletion.py` (16) | The deletion suite also exercises live `AsyncPostgresSaver` and `AsyncPostgresStore`; it deletes only uniquely identified rows and namespaces. |
 | F8 | CI pipeline | **NOT STARTED** | No `.github` or other CI config | Quality gates are manual. |
 | F9 | README/setup accuracy | **DONE** | README documents the uvicorn `--loop app.loops:selector_loop_factory` command | The deleted `run.py` is no longer referenced; `loops.py` is used. |
 | F10 | Live model/agent end-to-end verification | **PARTIAL** | Keys exist in ignored local `backend/.env`; no live LLM call made in this audit | Provider/auth behavior cannot be claimed without exercising it. |
@@ -349,7 +354,7 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 - **Purpose:** Server-owned per-picker conversations.
 - **Data:** `chat_threads` row per conversation; checkpoints per `thread_id`; memory per `picker_id`; reports may point at their source thread via `source_thread_id`.
 - **Ownership:** `get_thread`/`list_threads` filter by user id; routes verify ownership before history/delete.
-- **Deletion:** thread delete removes that conversation's checkpoints and row but not reports or memory. `DELETE /chat/memory` removes only notes. `DELETE /reports/{id}` hard-deletes one owned report and its source conversation. `DELETE /account/data` removes all owned data. `CHAT_RETENTION_DAYS` plus `python -m app.services.retention` deletes expired threads and checkpoints.
+- **Deletion:** thread delete removes that conversation's checkpoints and row but not reports or memory. `DELETE /chat/memory` removes only notes. `DELETE /reports/{id}` hard-deletes one owned report, redacts its text from notes, and removes its source conversation only when no other report references it. `DELETE /account/data` removes all owned reports, threads, picker-attributed checkpoints (including orphans), and notes. `CHAT_RETENTION_DAYS` plus `python -m app.services.retention` deletes expired threads, their checkpoints, and orphan checkpoint threads.
 - **Gaps:** no pagination; thread creation before agent invocation can leave an empty thread; no idempotency for retries; no streaming; full graph state is loaded for history; no scheduler for retention.
 
 ### 5.9 Reports persistence
@@ -382,7 +387,7 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 
 ### 5.13 Tests
 
-- **Backend:** 214 tests; all pass. Coverage includes auth, validation, MAD behavior, cold-start pending evidence and re-evaluation, ML readiness, graph routing, price aggregation, price API, reviewer actions, and real PostgreSQL price/review/deletion integration. The deletion suite covers ownership isolation, live checkpoint/store deletion, report hard delete, account-erasure retry, and retention cleanup.
+- **Backend:** 219 tests; all pass. Coverage includes auth, validation, MAD behavior, cold-start pending evidence and re-evaluation, ML readiness, graph routing, price aggregation, price API, reviewer actions, and real PostgreSQL price/review/deletion integration. The deletion suite covers ownership isolation, live checkpoint/store deletion, report hard delete, shared-thread preservation, memory redaction, orphan-checkpoint cleanup, account-erasure retry, and retention cleanup.
 - **Frontend:** none.
 - **Not covered:** live model/provider calls, full agent → subagent → persistence routing, multi-turn clarification, retention, rate limiting, prompt injection, performance.
 - **Consequence:** the highest-risk remaining wiring gaps are coordinator routing and live provider behavior.
@@ -420,9 +425,10 @@ Statuses are exactly one of **DONE**, **PARTIAL**, **NOT STARTED**, or **DIVERGE
 - `PriceService` + `evaluate_price`: deterministic price read model.
 - `load_thread_messages`: reads graph state via `aget_state`.
 - `delete_picker_memory`: explicit store-namespace erasure.
-- `delete_owned_report`: owner-scoped hard report deletion plus source-thread checkpoints and targeted note cleanup.
-- `erase_account_data`: retry-safe full erasure of owned reports, threads, checkpoints, and notes.
-- `purge_expired_chat_threads`: operator-invoked chat retention; no scheduler or seed import script.
+- `delete_owned_report`: owner-scoped hard report deletion; redacts the report text from notes and removes the source thread only when no other report uses it.
+- `erase_account_data`: retry-safe full erasure of owned reports, threads, picker-attributed checkpoints (including orphans), and notes.
+- `checkpoint_threads`: discovers picker-attributed and orphan checkpoint threads directly from the checkpointer tables.
+- `purge_expired_chat_threads`: operator-invoked chat retention, including orphan checkpoint threads; no scheduler or seed import script.
 
 ### 6.4 Live database verification
 
@@ -465,7 +471,7 @@ All routes are mounted under `/api/v1`. Health routes are unauthenticated; chat 
 # Backend test suite
 cd D:\scrap_sense\backend
 uv run pytest -o addopts="" --tb=short
-# 214 collected, 214 passed, 0 failed, 0 skipped, 0 collection errors
+# 219 collected, 219 passed, 0 failed, 0 skipped, 0 collection errors
 # Completed in 58.28s
 
 uv run ruff check .

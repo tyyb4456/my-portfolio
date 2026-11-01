@@ -3,7 +3,9 @@
 PostgreSQL cannot make writes to LangGraph's separate checkpointer and store
 APIs atomic with the application's own tables. The order is therefore fixed:
 
-1. delete every owned thread's LangGraph checkpoints;
+1. delete every owned thread's LangGraph checkpoints, including threads whose
+   ``chat_threads`` row is missing but whose checkpoint metadata names the
+   picker (unattributed legacy checkpoints cannot be proven to be theirs);
 2. delete the picker's complete long-term memory namespace;
 3. delete report rows and thread metadata in one database transaction.
 
@@ -30,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.chat_thread import ChatThread
 from app.models.report import Report
 from app.services.chat_memory import delete_picker_memory
+from app.services.checkpoint_threads import list_picker_checkpoint_thread_ids
 
 
 @dataclass(frozen=True)
@@ -58,16 +61,23 @@ async def erase_account_data(
 ) -> AccountErasureResult:
     """Erase all application-managed data for one authenticated picker."""
     try:
-        thread_ids = list(
-            (
+        owned_thread_ids = {
+            str(thread_id)
+            for thread_id in (
                 await session.scalars(
                     select(ChatThread.id).where(ChatThread.user_id == picker_id)
                 )
             ).all()
+        }
+        attributed_thread_ids = await list_picker_checkpoint_thread_ids(
+            session,
+            picker_id=picker_id,
         )
     except Exception as exc:
         await session.rollback()
         raise AccountErasureIncomplete("database") from exc
+
+    thread_ids = sorted(owned_thread_ids | set(attributed_thread_ids))
 
     for thread_id in thread_ids:
         try:

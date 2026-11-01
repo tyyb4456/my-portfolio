@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from langgraph.checkpoint.base import CheckpointMetadata
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from psycopg import AsyncConnection
@@ -32,8 +33,8 @@ from app.services.account_erasure import (
     erase_account_data,
 )
 from app.services.chat_memory import (
-    delete_memory_items_containing,
     delete_picker_memory,
+    redact_memory_items_containing,
 )
 from app.services.report_deletion import (
     ReportDeletionStorageError,
@@ -69,6 +70,14 @@ class FakeStore:
 
     async def adelete(self, namespace: tuple[str, ...], key: str) -> None:
         self.items.get(namespace, {}).pop(key, None)
+
+    async def aput(
+        self,
+        namespace: tuple[str, ...],
+        key: str,
+        value: dict[str, Any],
+    ) -> None:
+        self.items.setdefault(namespace, {})[key] = value
 
 
 class FailOnceStore(FakeStore):
@@ -163,7 +172,20 @@ async def _create_report(
     return report
 
 
-async def _put_checkpoint(checkpointer: AsyncPostgresSaver, thread_id: uuid.UUID) -> None:
+async def _put_checkpoint(
+    checkpointer: AsyncPostgresSaver,
+    thread_id: uuid.UUID,
+    *,
+    picker_id: str | None = None,
+) -> None:
+    metadata: dict[str, Any] = {
+        "source": "input",
+        "step": 0,
+        "parents": {},
+        "run_id": str(uuid.uuid4()),
+    }
+    if picker_id is not None:
+        metadata["picker_id"] = picker_id
     await checkpointer.aput(
         {"configurable": {"thread_id": str(thread_id), "checkpoint_ns": ""}},
         {
@@ -175,12 +197,7 @@ async def _put_checkpoint(checkpointer: AsyncPostgresSaver, thread_id: uuid.UUID
             "versions_seen": {},
             "updated_channels": ["messages"],
         },
-        {
-            "source": "input",
-            "step": 0,
-            "parents": {},
-            "run_id": str(uuid.uuid4()),
-        },
+        cast(CheckpointMetadata, metadata),
         {"messages": "1"},
     )
 
@@ -204,31 +221,39 @@ async def _cleanup(picker_ids: list[str]) -> None:
         await session.commit()
 
 
-async def test_targeted_memory_deletion_is_picker_scoped_and_exact() -> None:
+async def test_targeted_memory_redaction_is_picker_scoped_and_keeps_other_notes() -> None:
     store = FakeStore()
     owner = (f"picker-a-{uuid.uuid4().hex}",)
     stranger = (f"picker-b-{uuid.uuid4().hex}",)
     store.items[owner] = {
         "/memories/picker_notes.md": {"content": RAW_TEXT},
         "/memories/area.md": {"content": OTHER_TEXT},
+        "/memories/mixed.md": {
+            "content": f"Kept note.\n{RAW_TEXT}\nAnother kept note."
+        },
         "/memories/list.md": {"content": ["unrelated", {"note": RAW_TEXT}]},
     }
     store.items[stranger] = {
         "/memories/picker_notes.md": {"content": RAW_TEXT},
     }
 
-    deleted = await delete_memory_items_containing(
+    affected = await redact_memory_items_containing(
         store=store,  # type: ignore[arg-type]
         picker_id=owner[0],
         text=RAW_TEXT,
     )
 
-    assert deleted == 2
-    assert store.items[owner] == {"/memories/area.md": {"content": OTHER_TEXT}}
+    assert affected == 3
+    assert "/memories/picker_notes.md" not in store.items[owner]
+    assert store.items[owner]["/memories/area.md"] == {"content": OTHER_TEXT}
+    assert store.items[owner]["/memories/mixed.md"] == {
+        "content": "Kept note.\n\nAnother kept note."
+    }
+    assert store.items[owner]["/memories/list.md"] == {"content": ["unrelated"]}
     assert store.items[stranger] == {"/memories/picker_notes.md": {"content": RAW_TEXT}}
 
 
-async def test_targeted_memory_deletion_is_idempotent_and_self_cleans(
+async def test_targeted_memory_redaction_is_idempotent_and_self_cleans(
     postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
 ) -> None:
     _, store = postgres_storage
@@ -238,10 +263,10 @@ async def test_targeted_memory_deletion_is_idempotent_and_self_cleans(
     await store.aput(namespace, "/memories/area.md", {"content": OTHER_TEXT})
 
     try:
-        first = await delete_memory_items_containing(
+        first = await redact_memory_items_containing(
             store=store, picker_id=picker_id, text=RAW_TEXT
         )
-        second = await delete_memory_items_containing(
+        second = await redact_memory_items_containing(
             store=store, picker_id=picker_id, text=RAW_TEXT
         )
         remaining = [item.key for item in await store.asearch(namespace, limit=10)]
@@ -311,6 +336,88 @@ async def test_report_deletion_removes_owned_report_history_and_matching_memory(
         await _cleanup([owner, stranger])
         await delete_picker_memory(store=store, picker_id=owner)
         await delete_picker_memory(store=store, picker_id=stranger)
+
+
+async def test_report_deletion_keeps_a_thread_shared_with_other_reports(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, store = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    namespace = memory_namespace(owner)
+    await store.aput(
+        namespace,
+        "/memories/picker_notes.md",
+        {"content": f"Kept note.\n{RAW_TEXT}\nAnother kept note."},
+    )
+
+    try:
+        async with SessionLocal() as session:
+            shared_thread = await _create_thread(session, picker_id=owner)
+            report = await _create_report(
+                session,
+                picker_id=owner,
+                source_thread_id=shared_thread.id,
+            )
+            sibling = await _create_report(
+                session,
+                picker_id=owner,
+                raw_text=OTHER_TEXT,
+                source_thread_id=shared_thread.id,
+            )
+        await _put_checkpoint(checkpointer, shared_thread.id)
+
+        async with SessionLocal() as session:
+            deleted = await delete_owned_report(
+                session,
+                report_id=report.id,
+                picker_id=owner,
+                checkpointer=checkpointer,
+                store=store,
+            )
+
+        assert deleted is True
+        async with SessionLocal() as session:
+            assert await session.get(Report, report.id) is None
+            assert await session.get(Report, sibling.id) is not None
+            assert await session.get(ChatThread, shared_thread.id) is not None
+
+        assert await _has_checkpoint(checkpointer, shared_thread.id)
+        notes = await store.asearch(namespace, limit=10)
+        assert [item.key for item in notes] == ["/memories/picker_notes.md"]
+        assert notes[0].value == {"content": "Kept note.\n\nAnother kept note."}
+    finally:
+        await _cleanup([owner])
+        await delete_picker_memory(store=store, picker_id=owner)
+
+
+async def test_report_deletion_of_a_legacy_report_keeps_chat_history(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, store = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+
+    try:
+        async with SessionLocal() as session:
+            thread = await _create_thread(session, picker_id=owner)
+            report = await _create_report(session, picker_id=owner)
+        await _put_checkpoint(checkpointer, thread.id)
+
+        async with SessionLocal() as session:
+            deleted = await delete_owned_report(
+                session,
+                report_id=report.id,
+                picker_id=owner,
+                checkpointer=checkpointer,
+                store=store,
+            )
+
+        assert deleted is True
+        async with SessionLocal() as session:
+            assert await session.get(Report, report.id) is None
+            assert await session.get(ChatThread, thread.id) is not None
+        assert await _has_checkpoint(checkpointer, thread.id)
+    finally:
+        await _cleanup([owner])
 
 
 async def test_report_deletion_rejects_a_foreign_report(
@@ -456,6 +563,46 @@ async def test_account_erasure_removes_only_owned_data(
         await delete_picker_memory(store=store, picker_id=stranger)
 
 
+async def test_account_erasure_removes_attributed_orphan_checkpoints(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, store = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    stranger = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+
+    try:
+        async with SessionLocal() as session:
+            thread = await _create_thread(session, picker_id=owner)
+            stranger_thread = await _create_thread(session, picker_id=stranger)
+            await _create_report(
+                session,
+                picker_id=owner,
+                source_thread_id=thread.id,
+            )
+        await _put_checkpoint(checkpointer, thread.id, picker_id=owner)
+        await _put_checkpoint(checkpointer, orphan_thread, picker_id=owner)
+        await _put_checkpoint(checkpointer, stranger_thread.id, picker_id=owner)
+
+        async with SessionLocal() as session:
+            result = await erase_account_data(
+                session,
+                picker_id=owner,
+                checkpointer=checkpointer,
+                store=store,
+            )
+
+        assert result.threads_deleted == 1
+        async with SessionLocal() as session:
+            assert await session.get(ChatThread, thread.id) is None
+            assert await session.get(ChatThread, stranger_thread.id) is not None
+        assert not await _has_checkpoint(checkpointer, thread.id)
+        assert not await _has_checkpoint(checkpointer, orphan_thread)
+        assert await _has_checkpoint(checkpointer, stranger_thread.id)
+    finally:
+        await _cleanup([owner, stranger])
+
+
 async def test_account_erasure_failure_is_retryable(
     postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
 ) -> None:
@@ -539,6 +686,30 @@ async def test_purge_expired_threads_removes_checkpoints_and_metadata(
         assert deleted >= 1
         assert not await _has_checkpoint(checkpointer, expired.id)
         assert await _has_checkpoint(checkpointer, fresh.id)
+    finally:
+        await _cleanup([picker_id])
+
+
+async def test_purge_removes_orphan_checkpoint_threads(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    picker_id = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+
+    try:
+        async with SessionLocal() as session:
+            fresh = await _create_thread(session, picker_id=picker_id)
+        await _put_checkpoint(checkpointer, fresh.id)
+        await _put_checkpoint(checkpointer, orphan_thread)
+
+        await purge_expired_chat_threads(
+            settings=Settings(chat_retention_days=7),
+            now=datetime.now(UTC),
+        )
+
+        assert await _has_checkpoint(checkpointer, fresh.id)
+        assert not await _has_checkpoint(checkpointer, orphan_thread)
     finally:
         await _cleanup([picker_id])
 

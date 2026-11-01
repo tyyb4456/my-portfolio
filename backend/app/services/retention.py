@@ -7,7 +7,10 @@ expiry here; those require separate policy decisions (see
 ``SECURITY_AND_PRIVACY.md``).
 
 The cleanup removes expired chat checkpoints and the matching ``chat_threads``
-row together. It never deletes reports, which remain independent of the
+row together. It also removes orphan checkpoint threads that have no
+``chat_threads`` row at all: those conversations cannot be opened by any picker
+(ownership is checked against ``chat_threads``), so they silently outlive the
+retention window. It never deletes reports, which remain independent of the
 conversation that produced them.
 """
 
@@ -30,6 +33,10 @@ from sqlalchemy.engine import CursorResult
 from app.core.config import Settings, get_settings
 from app.db.session import SessionLocal
 from app.models.chat_thread import ChatThread
+from app.services.checkpoint_threads import (
+    is_orphan_checkpoint_thread,
+    list_orphan_checkpoint_thread_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +76,11 @@ async def purge_expired_chat_threads(
     now: datetime | None = None,
     limit: int = 1000,
 ) -> int:
-    """Delete threads whose last activity is older than the configured cutoff.
+    """Delete expired thread rows and unreachable orphan checkpoint threads.
 
-    Returns the number of deleted thread rows. Checkpoints are deleted before
-    the database row; a failure leaves the row in place for a safe retry.
+    Returns the number of threads removed (expired ``chat_threads`` rows plus
+    orphan checkpoint threads). Checkpoints are deleted before the database row;
+    a failure leaves the row in place for a safe retry.
     """
     resolved = settings or get_settings()
     if resolved.chat_retention_days <= 0:
@@ -92,8 +100,12 @@ async def purge_expired_chat_threads(
                 )
             ).all()
         )
+        orphan_thread_ids = await list_orphan_checkpoint_thread_ids(
+            session,
+            limit=limit,
+        )
 
-    if not thread_ids:
+    if not thread_ids and not orphan_thread_ids:
         return 0
 
     pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
@@ -117,6 +129,17 @@ async def purge_expired_chat_threads(
                 )
                 await session.commit()
             deleted += max(result.rowcount or 0, 0)
+
+        for orphan_id in orphan_thread_ids:
+            async with SessionLocal() as session:
+                still_orphan = await is_orphan_checkpoint_thread(
+                    session,
+                    thread_id=orphan_id,
+                )
+            if not still_orphan:
+                continue
+            await saver.adelete_thread(orphan_id)
+            deleted += 1
     finally:
         if pool is not None:
             await pool.close()
