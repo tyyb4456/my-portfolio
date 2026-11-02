@@ -14,7 +14,8 @@ Included:
 - Server-owned, per-user chat threads with persisted checkpoints and agent memory in PostgreSQL
 - Chat thread creation, listing, history loading, and deletion scoped to the signed-in user
 - Owner-scoped report deletion, saved-note deletion, and full account-data erasure
-- An operator-invoked chat-retention command driven by `CHAT_RETENTION_DAYS`
+- An operator-invoked chat-retention command driven by `CHAT_RETENTION_DAYS`, with age-gated and
+  ownership-checked orphan checkpoint cleanup
 - A Privacy & data dialog in the chat UI for deleting saved notes or all account data
 - A coordinator agent that delegates sale reports to the report-intake subagent
 - An LLM extraction step plus deterministic validation in the intake pipeline
@@ -66,7 +67,9 @@ docker-compose.yml       Local PostgreSQL
 
 ## Setup
 
-Prerequisites: Python 3.12+, uv, Node.js 20+, Docker, and a Clerk application.
+Prerequisites: Python 3.12+, uv, Node.js 20+, PostgreSQL 16+, Docker, and a Clerk application.
+PostgreSQL 16 or newer is required because retention uses `pg_input_is_valid`; `docker-compose.yml`
+pins 17 for local development.
 
 ```powershell
 Copy-Item .env.example .env
@@ -148,6 +151,17 @@ Price estimation is configured with conservative, deliberately unvalidated defau
   `price_per_kg`, `currency`, `unit`, `city` (or null for national), `source`, `collected_at`, and
   optionally `collector`; never use illustrative values as live market data.
 
+Chat retention is operator-invoked:
+
+- `CHAT_RETENTION_DAYS` (default `0`) - deletes `chat_threads` rows and their checkpoints whose
+  last activity is older than this many days. `0` disables the cleanup command.
+- `CHAT_ORPHAN_MIN_AGE_HOURS` (default `24`, must be positive) - an orphan checkpoint thread (one
+  with no `chat_threads` row) is eligible for cleanup only when every checkpoint has a parseable
+  timestamp, the latest of those timestamps is at least this many hours old, and every checkpoint
+  carries the same non-empty `picker_id`. Missing or unreadable timestamps, unknown ownership, and
+  conflicting owner metadata are preserved. A thread that gains a row, or receives a newer
+  checkpoint, before deletion is skipped.
+
 The Docker defaults are development-only. Change `POSTGRES_PASSWORD` and keep `backend/.env` in
 sync. The database is required: run `uv run alembic upgrade head` to create the application
 tables, and LangGraph creates its checkpoint and store tables on first chat request.
@@ -179,8 +193,11 @@ Chat (requires `Authorization: Bearer <Clerk session token>`):
 - `DELETE /api/v1/account/data` erases every report, thread, checkpoint, and saved note owned by the
   signed-in picker and returns counts only after all stages succeed. A `503` response is safe to retry.
 - An operator can set `CHAT_RETENTION_DAYS` and run `uv run python -m app.services.retention` from
-  `backend/` to delete expired chat threads, their checkpoints, and orphan checkpoint threads. `0`
-  disables it; this repository does not install a scheduler.
+  `backend/` to delete expired chat threads and their checkpoints. Orphan checkpoint threads are
+  removed only when every checkpoint is older than `CHAT_ORPHAN_MIN_AGE_HOURS`, the thread still has
+  no `chat_threads` row, and every checkpoint shares one explicit picker attribution; unknown-age,
+  unknown-owner, and mixed-owner orphans are preserved. `0` disables the command; this repository
+  does not install a scheduler.
 
 ```json
 {
@@ -366,7 +383,7 @@ npm run build
 
 The price and review integration tests run against the configured PostgreSQL database. Start it
 with `docker compose up -d db` and apply migrations with `uv run alembic upgrade head`; without a
-reachable database those tests skip instead of failing. The suite currently contains 219 tests, including live LangGraph checkpoint/store deletion coverage.
+reachable database those tests skip instead of failing. The suite currently contains 233 tests, including live LangGraph checkpoint/store deletion coverage.
 
 ## Known limitations
 
@@ -374,7 +391,11 @@ reachable database those tests skip instead of failing. The suite currently cont
 - Chat checkpoints and agent memory are persisted in PostgreSQL. Deleting a thread removes its
   checkpoints; the picker's long-term `/memories/picker_notes.md` memory is shared across that
   picker's threads and is erased by `DELETE /api/v1/chat/memory` or account erasure. Chat retention
-  is operator-invoked, not scheduled in this repository.
+  is operator-invoked, not scheduled in this repository. Orphan checkpoints without a usable
+  timestamp or a single explicit picker attribution are deliberately preserved, so legacy
+  unattributed orphans may accumulate until an operator reviews them. Retention rechecks evidence
+  immediately before deletion, but the recheck and LangGraph deletion are not atomic with
+  checkpoint writes; run retention as a controlled maintenance task.
 - Report rows keep the raw message and the Clerk-derived picker id until the owner deletes the report,
   erases account data, or an operator removes them. There is no automatic report-text expiry; a
   proposed policy is described in `SECURITY_AND_PRIVACY.md`.

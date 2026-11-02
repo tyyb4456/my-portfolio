@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # Operator-invoked chat retention. Zero disables the cleanup command. This is
     # not a background scheduler; deployment must run the command periodically.
     chat_retention_days: int = Field(default=0, ge=0)
+    # Orphan checkpoint threads have no chat_threads row and cannot be opened by
+    # a picker, but a recent one may still be an in-flight conversation. Only
+    # remove an orphan when every checkpoint is at least this many hours old and
+    # all checkpoints share one explicit picker id. Must be positive; missing or
+    # unreadable timestamps and unknown or conflicting owners are preserved.
+    chat_orphan_min_age_hours: int = Field(default=24, ge=1)
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 

@@ -87,8 +87,10 @@ Constraints and terminology:
   report, thread, picker-attributed checkpoint (including orphans), and note. The Privacy & data
   dialog exposes the user-facing controls.
 - An operator may set `CHAT_RETENTION_DAYS` and run the retention command to delete expired chat
-  threads and orphan checkpoint threads. There is no scheduler or automatic expiry for reports or
-  memory.
+  threads and their checkpoints. Orphan checkpoints are removed only when every checkpoint is older
+  than `CHAT_ORPHAN_MIN_AGE_HOURS`, the thread is still rowless, and all checkpoints share one
+  explicit picker attribution; unknown-age, unknown-owner, and mixed-owner orphans are preserved.
+  There is no scheduler or automatic expiry for reports or memory.
 - Raw report text is sent verbatim to the configured model provider.
 - Identity is a pseudonymous picker id derived from the Clerk `sub` claim. It is linkable to the
   signed-in account and is not an anonymous identity. Location is stored at neighborhood/city

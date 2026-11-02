@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from app.core.config import Settings
 
 
@@ -30,6 +33,18 @@ def test_price_defaults_are_conservative() -> None:
     assert settings.price_duplicate_window_minutes == 15
     assert settings.price_seed_prices_path.name == "seed_prices.json"
     assert settings.price_seed_prices_path.parent.name == "data"
+
+
+def test_chat_orphan_min_age_default_is_positive() -> None:
+    settings = Settings()
+
+    assert settings.chat_orphan_min_age_hours == 24
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_chat_orphan_min_age_rejects_non_positive_values(value: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings(chat_orphan_min_age_hours=value)
 
 
 def test_postgres_uri_strips_asyncpg_driver() -> None:

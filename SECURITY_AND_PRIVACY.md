@@ -11,7 +11,7 @@ This report distinguishes **implemented behavior**, **documented limitations**, 
 
 ScrapSense is a pseudonymous, account-linked data system, not an anonymous one. A report is stored against the Clerk `sub` claim, the raw picker message is stored in `reports.raw_text` and in LangGraph checkpoints, and chat messages are sent to the configured external model provider. The reviewer queue is identity-minimized, but the underlying rows still contain the picker id and raw text.
 
-The earlier user-control gap around long-term memory is fixed with `DELETE /api/v1/chat/memory`. A later update adds three separate erasure paths: delete one owned report, delete all saved notes, and erase all application-managed account data. Each is ownership-scoped and returns `404` for another picker's resource. A report deletion hard-deletes the row so its numeric observation stops contributing to future estimates; past estimates are not rewritten because they are not persisted. Deleting a report removes the report's raw text from saved notes without deleting unrelated notes, and removes its source thread only when no other report still uses that thread. Account erasure removes every owned report, thread, checkpoint, and memory item, including checkpoints whose thread row is missing but whose metadata names the picker. A new operator-invoked chat-retention command deletes expired threads, their checkpoints, and orphan checkpoint threads that have no `chat_threads` row when `CHAT_RETENTION_DAYS` is set; no scheduler is installed. Report raw text still has no automatic expiry, and provider, log, and backup copies remain outside these controls.
+The earlier user-control gap around long-term memory is fixed with `DELETE /api/v1/chat/memory`. A later update adds three separate erasure paths: delete one owned report, delete all saved notes, and erase all application-managed account data. Each is ownership-scoped and returns `404` for another picker's resource. A report deletion hard-deletes the row so its numeric observation stops contributing to future estimates; past estimates are not rewritten because they are not persisted. Deleting a report removes the report's raw text from saved notes without deleting unrelated notes, and removes its source thread only when no other report still uses that thread. Account erasure removes every owned report, thread, checkpoint, and memory item, including checkpoints whose thread row is missing but whose metadata names the picker; it never deletes foreign or unattributed checkpoints. A new operator-invoked chat-retention command deletes expired threads and their checkpoints when `CHAT_RETENTION_DAYS` is set. It removes an orphan checkpoint thread only when every checkpoint is older than `CHAT_ORPHAN_MIN_AGE_HOURS`, the thread still has no `chat_threads` row at deletion time, and all checkpoints share one explicit picker attribution. Orphans with a missing or unreadable timestamp, or with unknown or conflicting ownership, are preserved. A candidate whose evidence changes to unknown or conflicting between discovery and deletion is also preserved and logged. No scheduler is installed. Report raw text still has no automatic expiry, and provider, log, and backup copies remain outside these controls.
 
 The update also added a visible Privacy & data control to the chat UI, corrected the previous misleading "anonymous" wording, removed a picker id from an info-level log, and made thread repository writes user-scoped.
 
@@ -26,7 +26,7 @@ No changes were made to the price estimation algorithm, Tier 1/2/3 anomaly logic
 | Raw picker message | `reports.raw_text`; LangGraph checkpoints (`messages`, `original_message`); sent to xKiro | Linked to picker id and thread id | Owner, application code, model provider | Reports until report or account deletion; checkpoints until thread deletion, retention cutoff, or account deletion; no report-text expiry |
 | Extracted report fields | `reports` row (material, price/kg, quantity, currency, city, area, observed_at, confidence, anomaly fields) | `picker_id` | Owner indirectly; reviewer projection; price aggregation | Until report or account deletion; no automatic expiry |
 | Thread title | `chat_threads.title` (first 80 characters of the first message, or a default) | `user_id` | Owner's thread list | Until thread deletion, retention cutoff, or account deletion |
-| Chat history | LangGraph checkpoints keyed by server-generated thread UUID | Thread id; ownership checked against `chat_threads` | Owner via history endpoint; agent | Until thread deletion, retention cutoff, or account deletion |
+| Chat history | LangGraph checkpoints keyed by server-generated thread UUID | Thread id; ownership checked against `chat_threads`; orphan retention also requires explicit checkpoint `picker_id` metadata | Owner via history endpoint; agent | Until thread deletion, retention cutoff, or account deletion. An orphan with no thread row is removed only after `CHAT_ORPHAN_MIN_AGE_HOURS` and only when every checkpoint is timestamped and shares one explicit picker; otherwise it is preserved |
 | Long-term agent notes | Postgres store namespace `(picker_id,)`, logical path `/memories/picker_notes.md` | Picker id | Agent at runtime; no read endpoint | Until `DELETE /api/v1/chat/memory` or account deletion; no automatic expiry |
 | Reviewer decision | `reports.status`, `reviewed_at`, `reviewed_by` | Picker id and admin id | Admin-only review API | With the report row |
 | Reviewer queue projection | API response only | None (omits picker id and raw text) | `ADMIN_USER_IDS` | Not persisted separately |
@@ -40,7 +40,7 @@ No changes were made to the price estimation algorithm, Tier 1/2/3 anomaly logic
 4. **Long-term memory.** The agent may write notes through `StoreBackend` under namespace `(picker_id,)`. The logical path is `/memories/picker_notes.md`; after the composite backend strips the route prefix, the store key is `/picker_notes.md`.
 5. **External model.** The raw message and extraction/review prompts are sent to the configured OpenAI-compatible xKiro endpoint. Provider-side retention and training use were not verified in this audit.
 6. **Review.** Admins can read a projection that omits picker identity, Clerk identifiers, raw text, and thread information. The database row still contains those fields.
-7. **Deletion.** Thread deletion removes that thread's checkpoints and its row; it does not remove reports or memory. Memory deletion removes only the picker's memory namespace. Report deletion hard-deletes one owned report, redacts the report's raw text from saved notes while keeping unrelated notes, and removes the source thread's checkpoints and row only when no other report still references that thread. Account-data erasure removes every owned report, thread, checkpoint (including picker-attributed checkpoints with no thread row), and memory item. All paths are scoped to the authenticated picker id and are idempotent. Account erasure and report deletion fix the order as checkpoints, then memory, then the database transaction; a storage failure returns an error rather than a partial success, and retrying is safe.
+7. **Deletion.** Thread deletion removes that thread's checkpoints and its row; it does not remove reports or memory. Memory deletion removes only the picker's memory namespace. Report deletion hard-deletes one owned report, redacts the report's raw text from saved notes while keeping unrelated notes, and removes the source thread's checkpoints and row only when no other report still references that thread. Account-data erasure removes every owned report, thread, checkpoint (including picker-attributed checkpoints with no thread row), and memory item. All picker-facing paths are scoped to the authenticated picker id and are idempotent. Chat retention is a global operator action: it deletes expired threads for every picker and removes an orphan only after the orphan minimum age, an atomicity-narrowing recheck, and uniform explicit picker attribution across all checkpoints. Account erasure and report deletion fix the order as checkpoints, then memory, then the database transaction; a storage failure returns an error rather than a partial success, and retrying is safe.
 
 ## 4. Findings
 
@@ -146,7 +146,16 @@ The first 80 characters of the first message are stored as the thread title. Tit
 
 **Before:** retention enumerated `chat_threads`, and account erasure deleted checkpoints only for threads with a `chat_threads` row. Any checkpoint thread without that row was unreachable from the UI but was never deleted.
 
-**Now:** `backend/app/services/checkpoint_threads.py` discovers checkpoint threads directly. Account erasure deletes checkpoints attributed to the picker by checkpoint metadata even when the thread row is missing. Retention deletes orphan checkpoint threads that have no `chat_threads` row; because thread ownership is checked against that table, such threads cannot be opened by any picker. Legacy checkpoints with no `picker_id` metadata cannot be proven to belong to a requester, so account erasure never guesses; retention still removes them as global stale data.
+**Now:** `backend/app/services/checkpoint_threads.py` discovers checkpoint threads directly. Account erasure deletes checkpoints attributed to the picker by checkpoint metadata even when the thread row is missing; it never deletes foreign or unattributed checkpoints. Retention deletes an orphan checkpoint thread only when all of these hold:
+
+- it has no `chat_threads` row;
+- every checkpoint has a parseable `checkpoint->>'ts'`, and the latest timestamp is older than `CHAT_ORPHAN_MIN_AGE_HOURS` (default 24 hours);
+- every checkpoint has the same non-empty `metadata->>'picker_id'`;
+- both the row and whole-thread evidence checks still hold immediately before deletion.
+
+A recent orphan is preserved because it may be an in-flight conversation. An orphan is also preserved if any timestamp is missing or unreadable because age cannot be established, and if any checkpoint lacks an owner or owners conflict because ownership cannot be established. A `chat_threads` row that appears after discovery causes the candidate to be skipped. Deletion failures are logged without raw message content and do not prevent other candidates from being processed; the failed thread remains for a later run. The timestamp is read from `checkpoint->>'ts'`, not inferred from the checkpoint id, because direct writers can supply arbitrary ids.
+
+The checkpointer writes and application tables share one PostgreSQL database but are not in one transaction. The pre-deletion recheck narrows the race window, but a checkpoint written between the recheck and `adelete_thread` can still be removed. There is no writer-side lock shared with LangGraph, so this residual race is documented rather than claimed to be eliminated.
 
 ### F15. Legacy reports have no source thread (Medium) — accepted, documented
 
@@ -165,7 +174,8 @@ New reports record the server-generated thread UUID in `reports.source_thread_id
 | Added owned-report deletion with source-thread and targeted-memory cleanup | `backend/app/api/routes/reports.py`, `backend/app/services/report_deletion.py`, `backend/app/services/chat_memory.py` | `test_data_deletion.py` |
 | Redacted only the report text from saved notes, preserving unrelated notes | `backend/app/services/chat_memory.py` | `test_data_deletion.py`, `test_chat_memory.py` |
 | Kept chat threads shared by multiple reports | `backend/app/services/report_deletion.py` | `test_data_deletion.py` |
-| Covered orphan checkpoint threads in retention and account erasure | `backend/app/services/checkpoint_threads.py`, `retention.py`, `account_erasure.py` | `test_data_deletion.py` |
+| Covered picker-attributed orphan checkpoints in account erasure | `backend/app/services/checkpoint_threads.py`, `account_erasure.py` | `test_data_deletion.py` |
+| Made orphan retention age- and evidence-based, with ownership and recheck safeguards | `backend/app/services/checkpoint_threads.py`, `retention.py`, `app/core/config.py` | `test_data_deletion.py`, `test_config.py` |
 | Added account-data erasure | `backend/app/api/routes/account.py`, `backend/app/services/account_erasure.py` | `test_data_deletion.py` |
 | Recorded report source thread | `backend/app/models/report.py`, `migrations/0005_add_report_source_thread.py`, `workflows/pipeline.py` | Migration up/down; `test_data_deletion.py` |
 | Added operator-invoked chat retention | `backend/app/services/retention.py`, `app/core/config.py`, `.env.example` | `test_data_deletion.py` |
@@ -176,7 +186,10 @@ New reports record the server-generated thread UUID in `reports.source_thread_id
 Implemented:
 
 - Users can delete one report, all saved notes, or all account data through the API. The Privacy & data dialog exposes note and account erasure; it does not list individual reports.
-- An operator can set `CHAT_RETENTION_DAYS` and run `uv run python -m app.services.retention` from `backend/` to delete expired chat threads, their checkpoints, and orphan checkpoint threads with no thread row. `0` disables it. There is no scheduler in this repository; deployment must run it periodically.
+- An operator can set `CHAT_RETENTION_DAYS` and run `uv run python -m app.services.retention` from `backend/` to delete expired chat threads and their checkpoints. `0` disables the command. There is no scheduler in this repository; deployment must run it periodically.
+- Orphan checkpoint threads (no `chat_threads` row) are eligible only when every checkpoint is older than `CHAT_ORPHAN_MIN_AGE_HOURS` (default `24`, must be positive), the thread still has no row, and all checkpoints share one explicit `picker_id`. Missing or unreadable timestamps and unknown or conflicting ownership are preserved. The operator command is global, not picker-scoped; account erasure remains the picker-scoped path and never deletes foreign or unattributed checkpoints.
+- A failed checkpoint deletion is logged and not counted as success. Other candidates are still processed, and the failed thread is retried on the next run. Re-running the command is idempotent.
+- Residual limitation: the final recheck and LangGraph deletion are not atomic with checkpoint writes. A write that lands in the small window between them can still be deleted. Eliminating that race would require a writer-side lock shared with LangGraph, which this implementation does not add.
 - Report deletion is a hard delete. Existing estimates are not stored, so they are not rewritten; future estimates exclude the deleted observation.
 - Thread deletion and chat retention intentionally do not touch long-term memory or reports.
 
@@ -194,10 +207,11 @@ Open policy questions: whether rejected/flagged raw text should have a shorter r
 
 ## 7. Verification
 
-Run from `backend/`:
+PostgreSQL 16 or newer is required because orphan discovery uses `pg_input_is_valid`; the local
+`docker-compose.yml` pins PostgreSQL 17. Run from `backend/`:
 
 ```text
-uv run pytest          -> 219 passed, including live checkpointer/store deletion tests
+uv run pytest          -> 233 passed, including live checkpointer/store deletion tests
 uv run ruff check .    -> All checks passed
 uv run mypy app tests  -> Success: no issues found
 ```

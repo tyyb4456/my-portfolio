@@ -13,6 +13,7 @@ from typing import Any, cast
 import pytest
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.base import CheckpointMetadata
+from langgraph.checkpoint.base.id import uuid6
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from psycopg import AsyncConnection
@@ -28,6 +29,7 @@ from app.db.session import SessionLocal, get_session
 from app.main import app
 from app.models.chat_thread import ChatThread
 from app.models.report import Report
+from app.services import retention as retention_module
 from app.services.account_erasure import (
     AccountErasureIncomplete,
     erase_account_data,
@@ -36,6 +38,7 @@ from app.services.chat_memory import (
     delete_picker_memory,
     redact_memory_items_containing,
 )
+from app.services.checkpoint_threads import checkpoint_thread_evidence
 from app.services.report_deletion import (
     ReportDeletionStorageError,
     delete_owned_report,
@@ -101,6 +104,21 @@ class FakeCheckpointer:
         if self.fail:
             raise RuntimeError("checkpoint store is down")
         self.deleted.append(thread_id)
+
+
+class SelectiveFailCheckpointer:
+    """Fail once for one thread id, then delegate to the real checkpointer."""
+
+    def __init__(self, saver: AsyncPostgresSaver, fail_thread_id: str) -> None:
+        self.saver = saver
+        self.fail_thread_id = fail_thread_id
+        self.failed = False
+
+    async def adelete_thread(self, thread_id: str) -> None:
+        if thread_id == self.fail_thread_id and not self.failed:
+            self.failed = True
+            raise RuntimeError("checkpoint store is down")
+        await self.saver.adelete_thread(thread_id)
 
 
 @pytest.fixture
@@ -177,6 +195,8 @@ async def _put_checkpoint(
     thread_id: uuid.UUID,
     *,
     picker_id: str | None = None,
+    ts: datetime | str | None = None,
+    checkpoint_id: str | None = None,
 ) -> None:
     metadata: dict[str, Any] = {
         "source": "input",
@@ -186,12 +206,18 @@ async def _put_checkpoint(
     }
     if picker_id is not None:
         metadata["picker_id"] = picker_id
+    if ts is None:
+        checkpoint_ts = datetime.now(UTC).isoformat()
+    elif isinstance(ts, datetime):
+        checkpoint_ts = ts.isoformat()
+    else:
+        checkpoint_ts = ts
     await checkpointer.aput(
         {"configurable": {"thread_id": str(thread_id), "checkpoint_ns": ""}},
         {
             "v": 1,
-            "id": str(uuid.uuid4()),
-            "ts": datetime.now(UTC).isoformat(),
+            "id": checkpoint_id or str(uuid6()),
+            "ts": checkpoint_ts,
             "channel_values": {"messages": []},
             "channel_versions": {"messages": "1"},
             "versions_seen": {},
@@ -208,6 +234,23 @@ async def _has_checkpoint(
 ) -> bool:
     tuple_ = await checkpointer.aget_tuple(
         {"configurable": {"thread_id": str(thread_id), "checkpoint_ns": ""}}
+    )
+    return tuple_ is not None
+
+
+async def _has_specific_checkpoint(
+    checkpointer: AsyncPostgresSaver,
+    thread_id: uuid.UUID,
+    checkpoint_id: str,
+) -> bool:
+    tuple_ = await checkpointer.aget_tuple(
+        {
+            "configurable": {
+                "thread_id": str(thread_id),
+                "checkpoint_ns": "",
+                "checkpoint_id": checkpoint_id,
+            }
+        }
     )
     return tuple_ is not None
 
@@ -603,6 +646,35 @@ async def test_account_erasure_removes_attributed_orphan_checkpoints(
         await _cleanup([owner, stranger])
 
 
+async def test_account_erasure_preserves_foreign_and_unattributed_orphans(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, store = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    stranger = f"picker-{uuid.uuid4().hex}"
+    foreign_orphan = uuid.uuid4()
+    unattributed_orphan = uuid.uuid4()
+
+    try:
+        await _put_checkpoint(checkpointer, foreign_orphan, picker_id=stranger)
+        await _put_checkpoint(checkpointer, unattributed_orphan)
+
+        async with SessionLocal() as session:
+            await erase_account_data(
+                session,
+                picker_id=owner,
+                checkpointer=checkpointer,
+                store=store,
+            )
+
+        assert await _has_checkpoint(checkpointer, foreign_orphan)
+        assert await _has_checkpoint(checkpointer, unattributed_orphan)
+    finally:
+        await checkpointer.adelete_thread(str(foreign_orphan))
+        await checkpointer.adelete_thread(str(unattributed_orphan))
+        await _cleanup([owner, stranger])
+
+
 async def test_account_erasure_failure_is_retryable(
     postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
 ) -> None:
@@ -690,28 +762,477 @@ async def test_purge_expired_threads_removes_checkpoints_and_metadata(
         await _cleanup([picker_id])
 
 
-async def test_purge_removes_orphan_checkpoint_threads(
+async def test_purge_preserves_recent_orphan_checkpoint_threads(
     postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts=now - timedelta(hours=1),
+        )
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 0
+        assert await _has_checkpoint(checkpointer, orphan_thread)
+    finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
+
+
+async def test_purge_removes_stale_orphan_checkpoint_threads(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts=now - timedelta(days=8),
+        )
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 1
+        assert not await _has_checkpoint(checkpointer, orphan_thread)
+    finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
+
+
+async def test_purge_preserves_orphan_with_unknown_timestamp(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts="not-a-timestamp",
+        )
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 0
+        assert await _has_checkpoint(checkpointer, orphan_thread)
+    finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
+
+
+async def test_purge_preserves_stale_orphan_with_unknown_owner(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            ts=now - timedelta(days=8),
+        )
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 0
+        assert await _has_checkpoint(checkpointer, orphan_thread)
+    finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
+
+
+async def test_purge_uses_checkpoint_timestamps_not_id_order(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+    stale_id = "ffffffff-ffff-6fff-8fff-ffffffffffff"
+    recent_id = "00000000-0000-6000-8000-000000000000"
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts=now - timedelta(days=8),
+            checkpoint_id=stale_id,
+        )
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts=now - timedelta(hours=1),
+            checkpoint_id=recent_id,
+        )
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 0
+        assert await _has_specific_checkpoint(
+            checkpointer, orphan_thread, stale_id
+        )
+        assert await _has_specific_checkpoint(
+            checkpointer, orphan_thread, recent_id
+        )
+    finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
+
+
+async def test_purge_preserves_orphan_with_conflicting_picker_owners(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    stranger = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+    first_id = "00000000-0000-6000-8000-000000000001"
+    second_id = "00000000-0000-6000-8000-000000000002"
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts=now - timedelta(days=8),
+            checkpoint_id=first_id,
+        )
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=stranger,
+            ts=now - timedelta(days=9),
+            checkpoint_id=second_id,
+        )
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 0
+        assert await _has_specific_checkpoint(
+            checkpointer, orphan_thread, first_id
+        )
+        assert await _has_specific_checkpoint(
+            checkpointer, orphan_thread, second_id
+        )
+    finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
+
+
+async def test_purge_preserves_orphan_when_any_timestamp_is_unknown(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+    stale_id = "ffffffff-ffff-6fff-8fff-ffffffffffff"
+    unreadable_id = "00000000-0000-6000-8000-000000000000"
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts=now - timedelta(days=8),
+            checkpoint_id=stale_id,
+        )
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts="not-a-timestamp",
+            checkpoint_id=unreadable_id,
+        )
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 0
+        assert await _has_specific_checkpoint(
+            checkpointer, orphan_thread, stale_id
+        )
+        assert await _has_specific_checkpoint(
+            checkpointer, orphan_thread, unreadable_id
+        )
+    finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
+
+
+async def test_checkpoint_thread_evidence_requires_uniform_owner_and_timestamps(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    stranger = f"picker-{uuid.uuid4().hex}"
+    mixed_owner_thread = uuid.uuid4()
+    unreadable_thread = uuid.uuid4()
+    absent_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            mixed_owner_thread,
+            picker_id=owner,
+            ts=now - timedelta(days=8),
+        )
+        await _put_checkpoint(
+            checkpointer,
+            mixed_owner_thread,
+            picker_id=stranger,
+            ts=now - timedelta(days=9),
+        )
+        await _put_checkpoint(
+            checkpointer,
+            unreadable_thread,
+            picker_id=owner,
+            ts=now - timedelta(days=8),
+        )
+        await _put_checkpoint(
+            checkpointer,
+            unreadable_thread,
+            picker_id=owner,
+            ts="not-a-timestamp",
+        )
+
+        async with SessionLocal() as session:
+            mixed = await checkpoint_thread_evidence(
+                session, thread_id=str(mixed_owner_thread)
+            )
+            unreadable = await checkpoint_thread_evidence(
+                session, thread_id=str(unreadable_thread)
+            )
+            absent = await checkpoint_thread_evidence(
+                session, thread_id=str(absent_thread)
+            )
+
+        assert mixed is not None
+        assert mixed.last_activity is not None
+        assert mixed.picker_id is None
+        assert unreadable is not None
+        assert unreadable.last_activity is None
+        assert unreadable.picker_id == owner
+        assert absent is None
+    finally:
+        for thread_id in (mixed_owner_thread, unreadable_thread, absent_thread):
+            await checkpointer.adelete_thread(str(thread_id))
+
+
+async def test_purge_preserves_orphan_that_gains_a_thread_row_after_discovery(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     checkpointer, _ = postgres_storage
     picker_id = f"picker-{uuid.uuid4().hex}"
     orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+
+    async def discovered_orphan(*_args: Any, **_kwargs: Any) -> list[str]:
+        return [str(orphan_thread)]
 
     try:
-        async with SessionLocal() as session:
-            fresh = await _create_thread(session, picker_id=picker_id)
-        await _put_checkpoint(checkpointer, fresh.id)
-        await _put_checkpoint(checkpointer, orphan_thread)
-
-        await purge_expired_chat_threads(
-            settings=Settings(chat_retention_days=7),
-            now=datetime.now(UTC),
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=picker_id,
+            ts=now - timedelta(days=8),
+        )
+        monkeypatch.setattr(
+            retention_module,
+            "list_orphan_checkpoint_thread_ids",
+            discovered_orphan,
         )
 
-        assert await _has_checkpoint(checkpointer, fresh.id)
-        assert not await _has_checkpoint(checkpointer, orphan_thread)
+        async with SessionLocal() as session:
+            thread = ChatThread(id=orphan_thread, user_id=picker_id, title="late")
+            thread.created_at = now
+            thread.updated_at = now
+            session.add(thread)
+            await session.commit()
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 0
+        assert await _has_checkpoint(checkpointer, orphan_thread)
     finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
         await _cleanup([picker_id])
+
+
+async def test_purge_preserves_orphan_with_new_checkpoint_after_discovery(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    orphan_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+
+    async def discovered_orphan(*_args: Any, **_kwargs: Any) -> list[str]:
+        return [str(orphan_thread)]
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts=now - timedelta(days=8),
+        )
+        monkeypatch.setattr(
+            retention_module,
+            "list_orphan_checkpoint_thread_ids",
+            discovered_orphan,
+        )
+        await _put_checkpoint(
+            checkpointer,
+            orphan_thread,
+            picker_id=owner,
+            ts=now - timedelta(hours=1),
+        )
+
+        deleted = await purge_expired_chat_threads(
+            settings=Settings(
+                chat_retention_days=7,
+                chat_orphan_min_age_hours=24,
+            ),
+            checkpointer=checkpointer,
+            now=now,
+        )
+
+        assert deleted == 0
+        assert await _has_checkpoint(checkpointer, orphan_thread)
+    finally:
+        await checkpointer.adelete_thread(str(orphan_thread))
+
+
+async def test_purge_continues_after_orphan_deletion_failure_and_retries(
+    postgres_storage: tuple[AsyncPostgresSaver, AsyncPostgresStore],
+) -> None:
+    checkpointer, _ = postgres_storage
+    owner = f"picker-{uuid.uuid4().hex}"
+    failing_thread = uuid.uuid4()
+    safe_thread = uuid.uuid4()
+    now = datetime.now(UTC)
+    old_ts = now - timedelta(days=8)
+
+    try:
+        await _put_checkpoint(
+            checkpointer,
+            failing_thread,
+            picker_id=owner,
+            ts=old_ts,
+        )
+        await _put_checkpoint(
+            checkpointer,
+            safe_thread,
+            picker_id=owner,
+            ts=old_ts,
+        )
+        flaky = SelectiveFailCheckpointer(checkpointer, str(failing_thread))
+        settings = Settings(
+            chat_retention_days=7,
+            chat_orphan_min_age_hours=24,
+        )
+
+        first = await purge_expired_chat_threads(
+            settings=settings,
+            checkpointer=flaky,  # type: ignore[arg-type]
+            now=now,
+        )
+
+        assert first == 1
+        assert await _has_checkpoint(checkpointer, failing_thread)
+        assert not await _has_checkpoint(checkpointer, safe_thread)
+
+        second = await purge_expired_chat_threads(
+            settings=settings,
+            checkpointer=checkpointer,
+            now=now,
+        )
+        assert second == 1
+        assert not await _has_checkpoint(checkpointer, failing_thread)
+
+        third = await purge_expired_chat_threads(
+            settings=settings,
+            checkpointer=checkpointer,
+            now=now,
+        )
+        assert third == 0
+    finally:
+        await checkpointer.adelete_thread(str(failing_thread))
+        await checkpointer.adelete_thread(str(safe_thread))
 
 
 async def test_purge_is_disabled_when_retention_is_zero(

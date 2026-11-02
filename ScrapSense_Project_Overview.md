@@ -199,7 +199,7 @@ forecasting, and the offline gap-analysis loop are not. See §9 and `IMPLEMENTAT
 - ✓ Reviewer flow — `GET /api/v1/reports` queue, `GET /api/v1/reports/{id}`, and
   `PATCH /api/v1/reports/{id}/review` are restricted to `ADMIN_USER_IDS`; the `/review` UI has
   pagination, empty/access-denied/error states, and confirmation before approval or rejection
-- ✓ Verification — 219 backend tests pass, including real-PostgreSQL price/review/deletion and live LangGraph storage integration;
+- ✓ Verification — 233 backend tests pass, including real-PostgreSQL price/review/deletion and live LangGraph storage integration;
   ruff and mypy pass; the frontend lint and production build pass
 - ☐ Seed data — loader and empty file exist; no verified week-1 entries collected yet
 - ☐ Classifier agent — not present, not even a stub module
@@ -253,8 +253,10 @@ rather than hidden:
   in `observed_at` and falls back to `created_at` when absent.
 - **No automatic retention.** Checkpoints, memories, and report rows accumulate until an explicit
   deletion or account erasure. An operator can set `CHAT_RETENTION_DAYS` and run the retention
-  command for expired chat threads and orphan checkpoint threads, but no scheduler is installed and
-  report/memory expiry is still a policy gap.
+  command for expired chat threads and their checkpoints. Orphan checkpoints are removed only when
+  every checkpoint is older than `CHAT_ORPHAN_MIN_AGE_HOURS`, the thread is still rowless, and all
+  checkpoints share one explicit picker attribution; unknown-age, unknown-owner, and mixed-owner
+  orphans are preserved. No scheduler is installed and report/memory expiry is still a policy gap.
 - **No rate limiting or durable idempotency.** A retried chat request can create another thread
   and/or duplicate a report; duplicate suppression in price aggregation is only a short-window
   guard, not a submission-level guarantee.
