@@ -67,7 +67,7 @@ function LazyImage({ img, fallback, alt }) {
 
   return (
     <div ref={wrapRef} className="absolute inset-0">
-      {!loaded && <div className="absolute inset-0 bg-gray-800 animate-pulse" />}
+      {!loaded && <div className="absolute inset-0 bg-[#1c1c27] animate-pulse" />}
       {inView && (
         <picture>
           <source srcSet={img} type="image/webp" />

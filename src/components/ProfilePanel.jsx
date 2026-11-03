@@ -73,68 +73,68 @@ export default function ProfilePanel({ open, onClose }) {
 
       {/* Panel */}
       <div
-        className={`relative ml-auto w-full max-w-3xl h-full bg-[#0a0a0a] border-l border-white/10 flex flex-col transition-transform duration-500 ease-out ${mounted ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`relative ml-auto w-full max-w-3xl h-full bg-[#171722] border-l border-white/5 shadow-[-30px_0_70px_rgba(0,0,0,0.65)] flex flex-col transition-transform duration-500 ease-out ${mounted ? 'translate-x-0' : 'translate-x-full'}`}
         style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
       >
         {/* Top bar */}
-        <div className="flex items-center justify-between px-8 py-5 border-b border-white/10 shrink-0">
+        <div className="flex items-center justify-between px-8 py-5 border-b border-white/5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
               <span className="w-3 h-3 rounded-full bg-red-500/70" />
               <span className="w-3 h-3 rounded-full bg-yellow-500/70" />
               <span className="w-3 h-3 rounded-full bg-green-500/70" />
             </div>
-            <span className="text-white/30 text-xs ml-2 tracking-widest uppercase">tayyab.profile</span>
+            <span className="text-muted text-xs ml-2 tracking-widest uppercase">tayyab.profile</span>
           </div>
           <button
             onClick={onClose}
-            className="text-white/40 hover:text-white transition-colors duration-200 text-xl leading-none"
+            className="clay-tile w-9 h-9 rounded-full text-muted hover:text-cream text-sm leading-none"
           >
             ✕
           </button>
         </div>
 
         {/* Header */}
-        <div className="px-8 py-7 border-b border-white/10 shrink-0">
+        <div className="px-8 py-7 border-b border-white/5 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-3xl font-bold text-white tracking-tight">Tayyab Hussain</h2>
-              <p className="text-white/50 text-sm mt-1 tracking-wide">AI Engineer · ML Systems · Full-Stack AI</p>
+              <h2 className="text-3xl font-black text-cream tracking-tight">Tayyab Hussain</h2>
+              <p className="text-muted text-sm mt-1 tracking-wide">AI Engineer · ML Systems · Full-Stack AI</p>
               <div className="flex flex-wrap gap-2 mt-4">
                 {['Python', 'TensorFlow', 'LangChain', 'FastAPI', 'React'].map(tag => (
-                  <span key={tag} className="px-2.5 py-0.5 text-xs border border-white/20 text-white/60 rounded-full tracking-wide">
+                  <span key={tag} className="clay-pill px-3 py-1 text-xs text-lav font-bold tracking-wide">
                     {tag}
                   </span>
                 ))}
               </div>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-white/30 text-xs">BZU, Multan</p>
-              <p className="text-white/30 text-xs mt-0.5">CGPA 3.40</p>
-              <p className="text-white/30 text-xs mt-0.5">2022 – 2026</p>
+              <p className="text-muted text-xs">BZU, Multan</p>
+              <p className="text-muted text-xs mt-0.5">CGPA 3.40</p>
+              <p className="text-muted text-xs mt-0.5">2022 – 2026</p>
             </div>
           </div>
 
           {/* Contact row */}
-          <div className="flex flex-wrap gap-4 mt-5 text-xs text-white/40">
-            <a href="mailto:igntayyab@gmail.com" className="hover:text-white/80 transition-colors">igntayyab@gmail.com</a>
-            <span className="text-white/20">·</span>
-            <a href="https://github.com/igntayyab" target="_blank" rel="noreferrer" className="hover:text-white/80 transition-colors">github.com/igntayyab</a>
-            <span className="text-white/20">·</span>
+          <div className="flex flex-wrap gap-4 mt-5 text-xs text-muted">
+            <a href="mailto:igntayyab@gmail.com" className="hover:text-lav transition-colors">igntayyab@gmail.com</a>
+            <span className="text-white/10">·</span>
+            <a href="https://github.com/igntayyab" target="_blank" rel="noreferrer" className="hover:text-lav transition-colors">github.com/igntayyab</a>
+            <span className="text-white/10">·</span>
             <span>+92 340 432 8229</span>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-white/10 px-8 shrink-0">
+        <div className="flex border-b border-white/5 px-8 shrink-0">
           {tabs.map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`py-3 mr-6 text-xs tracking-widest uppercase transition-all duration-200 border-b-2 ${
+              className={`py-3 mr-6 text-xs font-bold tracking-widest uppercase transition-all duration-200 border-b-2 ${
                 activeTab === tab
-                  ? 'text-white border-white'
-                  : 'text-white/30 border-transparent hover:text-white/60'
+                  ? 'text-lav border-lav'
+                  : 'text-muted border-transparent hover:text-cream'
               }`}
             >
               {tab}
@@ -150,15 +150,15 @@ export default function ProfilePanel({ open, onClose }) {
             <div key={i}>
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-white font-bold text-base">{job.role}</h3>
-                  <p className="text-white/40 text-xs mt-0.5">{job.company}</p>
+                  <h3 className="text-cream font-extrabold text-base">{job.role}</h3>
+                  <p className="text-muted text-xs mt-0.5">{job.company}</p>
                 </div>
-                <span className="text-white/30 text-xs shrink-0 ml-4">{job.period}</span>
+                <span className="text-lav text-xs shrink-0 ml-4">{job.period}</span>
               </div>
               <ul className="space-y-3">
                 {job.points.map((pt, j) => (
-                  <li key={j} className="flex gap-3 text-sm text-white/60 leading-relaxed">
-                    <span className="text-white/20 shrink-0 mt-0.5">→</span>
+                  <li key={j} className="flex gap-3 text-sm text-muted leading-relaxed">
+                    <span className="text-lav/50 shrink-0 mt-0.5">→</span>
                     <span>{pt}</span>
                   </li>
                 ))}
@@ -170,12 +170,12 @@ export default function ProfilePanel({ open, onClose }) {
           {activeTab === 'projects' && (
             <div className="space-y-4">
               {projects.map((p, i) => (
-                <div key={i} className="border border-white/10 rounded-lg p-5 hover:border-white/25 transition-colors duration-200 group">
+                <div key={i} className="clay-sm p-5 transition-all duration-300 group hover:-translate-y-1">
                   <div className="flex items-start justify-between gap-3 mb-2">
-                    <h3 className="text-white text-sm font-semibold group-hover:text-white transition-colors">{p.name}</h3>
+                    <h3 className="text-cream text-sm font-extrabold group-hover:text-lav transition-colors">{p.name}</h3>
                   </div>
-                  <p className="text-white/30 text-xs mb-3 tracking-wide">{p.stack}</p>
-                  <p className="text-white/55 text-xs leading-relaxed">{p.desc}</p>
+                  <p className="text-lav/70 text-xs mb-3 tracking-wide font-bold">{p.stack}</p>
+                  <p className="text-muted text-xs leading-relaxed">{p.desc}</p>
                 </div>
               ))}
             </div>
@@ -186,10 +186,10 @@ export default function ProfilePanel({ open, onClose }) {
             <div className="space-y-6">
               {Object.entries(skills).map(([category, items]) => (
                 <div key={category}>
-                  <p className="text-white/30 text-xs tracking-widest uppercase mb-3">{category}</p>
+                  <p className="text-lav text-xs tracking-widest uppercase mb-3 font-bold">{category}</p>
                   <div className="flex flex-wrap gap-2">
                     {items.map(skill => (
-                      <span key={skill} className="px-3 py-1 text-xs bg-white/5 border border-white/10 text-white/70 rounded hover:bg-white/10 hover:text-white transition-all duration-200">
+                      <span key={skill} className="clay-pill px-3 py-1.5 text-xs text-cream/80 font-semibold hover:text-lav transition-all duration-200">
                         {skill}
                       </span>
                     ))}
@@ -203,13 +203,13 @@ export default function ProfilePanel({ open, onClose }) {
           {activeTab === 'achievements' && (
             <div className="space-y-5">
               {achievements.map((a, i) => (
-                <div key={i} className="flex gap-5 border-l-2 border-white/20 pl-5 hover:border-white/50 transition-colors duration-200">
+                <div key={i} className="flex gap-5 clay-sm p-5 hover:-translate-y-1 transition-transform duration-300">
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">
-                      <h3 className="text-white text-sm font-semibold">{a.title}</h3>
-                      <span className="text-white/30 text-xs">{a.year}</span>
+                      <h3 className="text-cream text-sm font-extrabold">{a.title}</h3>
+                      <span className="text-lav text-xs font-bold">{a.year}</span>
                     </div>
-                    <p className="text-white/50 text-xs leading-relaxed">{a.desc}</p>
+                    <p className="text-muted text-xs leading-relaxed">{a.desc}</p>
                   </div>
                 </div>
               ))}
@@ -219,11 +219,11 @@ export default function ProfilePanel({ open, onClose }) {
         </div>
 
         {/* Bottom CTA */}
-        <div className="px-8 py-5 border-t border-white/10 shrink-0 flex items-center justify-between">
-          <p className="text-white/25 text-xs tracking-wide">Open to freelance & full-time opportunities</p>
+        <div className="px-8 py-5 border-t border-white/5 shrink-0 flex items-center justify-between">
+          <p className="text-muted text-xs tracking-wide">Open to freelance &amp; full-time opportunities</p>
           <a
             href="mailto:igntayyab@gmail.com"
-            className="px-4 py-2 text-xs bg-white text-black font-semibold rounded hover:bg-gray-200 transition-colors duration-200"
+            className="clay-btn clay-btn-primary px-5 py-2.5 text-xs"
           >
             Get in Touch →
           </a>
