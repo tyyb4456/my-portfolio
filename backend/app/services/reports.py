@@ -260,6 +260,39 @@ async def list_reports_for_review(
     return list(result.scalars()), int(total or 0)
 
 
+async def list_reports_for_picker(
+    session: AsyncSession,
+    *,
+    picker_id: str,
+    offset: int,
+    limit: int,
+    status: str | None = None,
+) -> tuple[list[Report], int]:
+    """Return one page of a picker's own reports and the matching total.
+
+    ``picker_id`` always comes from the authenticated request, never from client
+    input. Newest reports are returned first with the report id as a stable
+    tie-breaker so pagination cannot skip or repeat a row.
+    """
+    if status is not None and status not in REPORT_STATUSES:
+        raise ValueError("unsupported report status")
+
+    conditions = [Report.picker_id == picker_id]
+    if status is not None:
+        conditions.append(Report.status == status)
+
+    total = await session.scalar(select(func.count(Report.id)).where(*conditions))
+    statement = (
+        select(Report)
+        .where(*conditions)
+        .order_by(Report.created_at.desc(), Report.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    result = await session.execute(statement)
+    return list(result.scalars()), int(total or 0)
+
+
 async def get_report_for_review(
     session: AsyncSession,
     *,

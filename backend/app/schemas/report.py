@@ -117,6 +117,44 @@ class ReportQueueResponse(BaseModel):
     has_more: bool
 
 
+class PickerReportItem(BaseModel):
+    """Picker-facing projection of one of their own reports.
+
+    This deliberately omits picker identity and the source conversation. It is
+    only ever returned for the authenticated picker who owns the row.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    material: str
+    quantity_kg: float
+    price_per_kg: float
+    currency: str
+    unit: Literal["kg"] = "kg"
+    city: str | None
+    area: str | None
+    observed_at: datetime | None
+    created_at: datetime
+    status: ReportStatus
+    is_anomalous: bool
+    anomaly_method: str
+    anomaly_reason: str
+    anomaly_outcome: str = "unknown"
+    reviewed_at: datetime | None = None
+
+
+class PickerReportResponse(BaseModel):
+    """Paginated list of the signed-in picker's own reports, newest first."""
+
+    items: list[PickerReportItem]
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1)
+    total: int = Field(ge=0)
+    pages: int = Field(ge=0)
+    has_more: bool
+
+
 class ReportRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

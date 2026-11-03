@@ -218,6 +218,15 @@ function SidebarContent({
         {!demo ? (
           <>
             <a
+              href="/reports"
+              aria-label="Open my reports"
+              className="clay-row mt-2 flex min-h-11 items-center gap-2 px-3 py-2 text-[12px] font-medium text-ink"
+            >
+              <TagMark className="h-3.5 w-3.5 shrink-0 text-muted" />
+              <span className="min-w-0 flex-1 truncate">My reports</span>
+              <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+            </a>
+            <a
               href="/review"
               aria-label="Open reviewer queue"
               className="clay-row mt-2 flex min-h-11 items-center gap-2 px-3 py-2 text-[12px] font-medium text-ink"

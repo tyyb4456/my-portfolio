@@ -234,6 +234,54 @@ export function listReports(
   return request<ReportQueueResponse>(`/reports?${params.toString()}`, token)
 }
 
+export interface MyReportItem {
+  id: string
+  material: string
+  quantity_kg: number
+  price_per_kg: number
+  currency: string
+  unit: 'kg'
+  city: string | null
+  area: string | null
+  observed_at: string | null
+  created_at: string
+  status: ReportStatus
+  is_anomalous: boolean
+  anomaly_method: string
+  anomaly_reason: string
+  anomaly_outcome: string
+  reviewed_at: string | null
+}
+
+export interface MyReportResponse {
+  items: MyReportItem[]
+  page: number
+  page_size: number
+  total: number
+  pages: number
+  has_more: boolean
+}
+
+export interface MyReportQuery {
+  status?: ReportStatus
+  page?: number
+  pageSize?: number
+}
+
+export function listMyReports(
+  token: string,
+  query: MyReportQuery = {},
+): Promise<MyReportResponse> {
+  const params = new URLSearchParams({
+    page: String(query.page ?? 1),
+    page_size: String(query.pageSize ?? 20),
+  })
+  if (query.status) {
+    params.set('status', query.status)
+  }
+  return request<MyReportResponse>(`/reports/mine?${params.toString()}`, token)
+}
+
 export function deleteReport(token: string, reportId: string): Promise<void> {
   return request<void>(`/reports/${encodeURIComponent(reportId)}`, token, {
     method: 'DELETE',

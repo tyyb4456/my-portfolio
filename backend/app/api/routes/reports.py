@@ -19,6 +19,8 @@ from app.api.routes.chat import get_checkpointer, get_memory_store
 from app.auth import ClerkUser, require_admin, require_auth
 from app.db.session import get_session
 from app.schemas.report import (
+    PickerReportItem,
+    PickerReportResponse,
     ReportQueueItem,
     ReportQueueResponse,
     ReportReviewRequest,
@@ -33,6 +35,7 @@ from app.services.reports import (
     ReportApprovalNotEligible,
     ReportReviewConflict,
     get_report_for_review,
+    list_reports_for_picker,
     list_reports_for_review,
     review_report,
 )
@@ -82,6 +85,58 @@ async def list_reports(
     pages = (total + page_size - 1) // page_size
     return ReportQueueResponse(
         items=[ReportQueueItem.model_validate(report) for report in reports],
+        page=page,
+        page_size=page_size,
+        total=total,
+        pages=pages,
+        has_more=page * page_size < total,
+    )
+
+
+@router.get(
+    "/mine",
+    response_model=PickerReportResponse,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid Clerk session"},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Report store unavailable"},
+    },
+)
+async def list_my_reports(
+    user: Annotated[ClerkUser, Depends(require_auth)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    report_status: Annotated[
+        ReportStatus | None,
+        Query(alias="status", description="Optional status filter."),
+    ] = None,
+    page: Annotated[int, Query(ge=1, description="One-based page number.")] = 1,
+    page_size: Annotated[
+        int,
+        Query(ge=1, le=100, description="Reports per page (maximum 100)."),
+    ] = 20,
+) -> PickerReportResponse:
+    """Return the signed-in picker's own reports, newest first.
+
+    Ownership is enforced with the authenticated ``picker_id``; no client input
+    can widen the query to another picker's rows.
+    """
+    try:
+        reports, total = await list_reports_for_picker(
+            session,
+            picker_id=user.user_id,
+            status=report_status,
+            offset=(page - 1) * page_size,
+            limit=page_size,
+        )
+    except SQLAlchemyError:
+        logger.exception("Picker report list database query failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Your reports are unavailable",
+        ) from None
+
+    pages = (total + page_size - 1) // page_size
+    return PickerReportResponse(
+        items=[PickerReportItem.model_validate(report) for report in reports],
         page=page,
         page_size=page_size,
         total=total,

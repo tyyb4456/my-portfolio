@@ -6,12 +6,14 @@
   UserButton,
 } from '@clerk/react'
 import { Chat } from './components/Chat'
+import { MyReports } from './components/reports/MyReports'
 import { ReviewQueue } from './components/review/ReviewQueue'
 import { ThemeToggle } from './components/ThemeToggle'
 import { ArrowRightIcon, ShieldIcon, TagMark } from './components/chat/icons'
 import { demoMode, landingMode } from './lib/demoMode'
 
 const reviewMode = window.location.pathname.replace(/\/+$/, '').endsWith('/review')
+const reportsMode = window.location.pathname.replace(/\/+$/, '').endsWith('/reports')
 
 const sampleRows = [
   { material: 'Plastic', detail: '2 kg · mixed bottles', paid: 'Rs 300' },
@@ -152,6 +154,25 @@ function App() {
         <ClerkLoaded>
           <Show when="signed-in" fallback={<Landing />}>
             <ReviewQueue
+              accountSlot={
+                <UserButton appearance={{ elements: { avatarBox: 'h-7 w-7' } }} />
+              }
+            />
+          </Show>
+        </ClerkLoaded>
+      </>
+    )
+  }
+
+  if (reportsMode) {
+    return (
+      <>
+        <ClerkLoading>
+          <BootScreen />
+        </ClerkLoading>
+        <ClerkLoaded>
+          <Show when="signed-in" fallback={<Landing />}>
+            <MyReports
               accountSlot={
                 <UserButton appearance={{ elements: { avatarBox: 'h-7 w-7' } }} />
               }
