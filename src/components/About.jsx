@@ -1,28 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import Reveal from './Reveal'
 
 export default function About() {
-  const [visible, setVisible] = useState(false)
-  const sectionRef = useRef(null)
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setVisible(true) },
-      { threshold: 0.2 }
-    )
-    if (sectionRef.current) observer.observe(sectionRef.current)
-    return () => observer.disconnect()
-  }, [])
-
   return (
     <section
       id="about"
-      ref={sectionRef}
       className="relative px-6 md:px-16 py-24 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-5 gap-10 items-center">
 
         {/* Text */}
-        <div className={`md:col-span-3 transition-all duration-700 ${visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-10'}`}>
+        <Reveal variant="left" className="md:col-span-3">
           <div className="clay p-7 md:p-10">
             <p className="text-xs uppercase text-lav mb-3 tracking-[0.25em] font-extrabold">Who I am</p>
             <h2 className="text-4xl md:text-5xl font-black mb-5 tracking-tight">
@@ -40,7 +27,7 @@ export default function About() {
               Hackathon against 50+ teams. My focus is delivering end-to-end AI solutions — from model training
               to live deployment.
             </p>
-            <p className="mt-4 text-cream/80 italic font-semibold">
+            <p className="mt-4 text-cream-soft italic font-semibold">
               Interested in building something with AI?
             </p>
             <a href="#contact" className="clay-btn mt-6 px-6 py-3 text-sm">
@@ -50,10 +37,10 @@ export default function About() {
               </svg>
             </a>
           </div>
-        </div>
+        </Reveal>
 
         {/* Image */}
-        <div className={`md:col-span-2 flex justify-center transition-all duration-700 delay-200 ${visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-10'}`}>
+        <Reveal variant="right" delay={150} className="md:col-span-2 flex justify-center">
           <div className="relative">
             <div className="clay-lg p-4 rotate-2 hover:rotate-0 transition-transform duration-500">
               <img
@@ -63,17 +50,21 @@ export default function About() {
               />
             </div>
 
-            <div className="clay-sm absolute -bottom-5 -left-4 md:-left-8 px-4 py-3 animate-float">
-              <p className="text-sm font-black text-cream">Kaggle Master</p>
-              <p className="text-[10px] uppercase tracking-widest text-muted font-bold">Global top tier</p>
-            </div>
+            <Reveal variant="scale" delay={400} className="absolute -bottom-5 -left-4 md:-left-8">
+              <div className="clay-sm px-4 py-3 animate-float">
+                <p className="text-sm font-black text-cream">Kaggle Master</p>
+                <p className="text-[10px] uppercase tracking-widest text-muted font-bold">Global top tier</p>
+              </div>
+            </Reveal>
 
-            <div className="clay-sm absolute -top-5 -right-3 md:-right-6 px-4 py-3 animate-float-slow">
-              <p className="text-sm font-black text-clay-gradient">2nd Place</p>
-              <p className="text-[10px] uppercase tracking-widest text-muted font-bold">Intl. AI Hackathon</p>
-            </div>
+            <Reveal variant="scale" delay={550} className="absolute -top-5 -right-3 md:-right-6">
+              <div className="clay-sm px-4 py-3 animate-float-slow">
+                <p className="text-sm font-black text-clay-gradient">2nd Place</p>
+                <p className="text-[10px] uppercase tracking-widest text-muted font-bold">Intl. AI Hackathon</p>
+              </div>
+            </Reveal>
           </div>
-        </div>
+        </Reveal>
 
       </div>
     </section>

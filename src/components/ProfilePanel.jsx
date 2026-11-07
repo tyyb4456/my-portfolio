@@ -73,11 +73,11 @@ export default function ProfilePanel({ open, onClose }) {
 
       {/* Panel */}
       <div
-        className={`relative ml-auto w-full max-w-3xl h-full bg-[#171722] border-l border-white/5 shadow-[-30px_0_70px_rgba(0,0,0,0.65)] flex flex-col transition-transform duration-500 ease-out ${mounted ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`relative ml-auto w-full max-w-3xl h-full bg-[var(--panel-bg)] border-l border-[var(--line)] shadow-[var(--panel-shadow)] flex flex-col transition-transform duration-500 ease-out ${mounted ? 'translate-x-0' : 'translate-x-full'}`}
         style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
       >
         {/* Top bar */}
-        <div className="flex items-center justify-between px-8 py-5 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between px-8 py-5 border-b border-[var(--line)] shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
               <span className="w-3 h-3 rounded-full bg-red-500/70" />
@@ -95,7 +95,7 @@ export default function ProfilePanel({ open, onClose }) {
         </div>
 
         {/* Header */}
-        <div className="px-8 py-7 border-b border-white/5 shrink-0">
+        <div className="px-8 py-7 border-b border-[var(--line)] shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-3xl font-black text-cream tracking-tight">Tayyab Hussain</h2>
@@ -118,15 +118,15 @@ export default function ProfilePanel({ open, onClose }) {
           {/* Contact row */}
           <div className="flex flex-wrap gap-4 mt-5 text-xs text-muted">
             <a href="mailto:igntayyab@gmail.com" className="hover:text-lav transition-colors">igntayyab@gmail.com</a>
-            <span className="text-white/10">·</span>
+            <span className="text-[var(--line-strong)]">·</span>
             <a href="https://github.com/igntayyab" target="_blank" rel="noreferrer" className="hover:text-lav transition-colors">github.com/igntayyab</a>
-            <span className="text-white/10">·</span>
+            <span className="text-[var(--line-strong)]">·</span>
             <span>+92 340 432 8229</span>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-white/5 px-8 shrink-0">
+        <div className="flex border-b border-[var(--line)] px-8 shrink-0">
           {tabs.map(tab => (
             <button
               key={tab}
@@ -189,7 +189,7 @@ export default function ProfilePanel({ open, onClose }) {
                   <p className="text-lav text-xs tracking-widest uppercase mb-3 font-bold">{category}</p>
                   <div className="flex flex-wrap gap-2">
                     {items.map(skill => (
-                      <span key={skill} className="clay-pill px-3 py-1.5 text-xs text-cream/80 font-semibold hover:text-lav transition-all duration-200">
+                      <span key={skill} className="clay-pill px-3 py-1.5 text-xs text-cream-soft font-semibold hover:text-lav transition-all duration-200">
                         {skill}
                       </span>
                     ))}
@@ -219,7 +219,7 @@ export default function ProfilePanel({ open, onClose }) {
         </div>
 
         {/* Bottom CTA */}
-        <div className="px-8 py-5 border-t border-white/5 shrink-0 flex items-center justify-between">
+        <div className="px-8 py-5 border-t border-[var(--line)] shrink-0 flex items-center justify-between">
           <p className="text-muted text-xs tracking-wide">Open to freelance &amp; full-time opportunities</p>
           <a
             href="mailto:igntayyab@gmail.com"

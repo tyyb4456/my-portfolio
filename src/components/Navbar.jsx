@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import ThemeToggle from './ThemeToggle'
 
 const navLinks = ['About', 'Services', 'Skills', 'Projects']
 
@@ -42,7 +43,7 @@ export default function Navbar() {
             <li key={link}>
               <a
                 href={`#${link.toLowerCase()}`}
-                className="block px-4 py-1.5 rounded-full text-sm font-bold text-muted hover:text-cream hover:bg-white/5 transition-all duration-300"
+                className="block px-4 py-1.5 rounded-full text-sm font-bold text-muted hover:text-cream hover:bg-[var(--hover)] transition-all duration-300"
               >
                 {link}
               </a>
@@ -50,20 +51,23 @@ export default function Navbar() {
           ))}
         </ul>
 
-        {/* Connect Button */}
-        <button
-          onClick={handleConnect}
-          className={`clay-btn px-5 py-2 text-sm ${
-            btnState === 'Connected!' ? 'clay-btn-primary' : ''
-          }`}
-        >
-          <span
-            className={`inline-block w-2 h-2 rounded-full transition-colors duration-300 ${
-              btnState === 'Connected!' ? 'bg-emerald-900' : 'bg-mint'
+        {/* Theme toggle + Connect */}
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <button
+            onClick={handleConnect}
+            className={`clay-btn px-5 py-2 text-sm ${
+              btnState === 'Connected!' ? 'clay-btn-primary' : ''
             }`}
-          />
-          {btnState}
-        </button>
+          >
+            <span
+              className={`inline-block w-2 h-2 rounded-full transition-colors duration-300 ${
+                btnState === 'Connected!' ? 'bg-emerald-900' : 'bg-mint'
+              }`}
+            />
+            {btnState}
+          </button>
+        </div>
       </nav>
     </div>
   )

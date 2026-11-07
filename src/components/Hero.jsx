@@ -1,22 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
 import ProfilePanel from './ProfilePanel'
 
-const quickActions = [
+const coreStack = [
   {
-    label: 'ML',
+    label: 'Machine Learning',
     color: 'text-lav',
     icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6l2.1 2.1m0-12.8l-2.1 2.1M7.7 16.3l-2.1 2.1" />
         <circle cx="12" cy="12" r="3.5" />
       </svg>
     ),
   },
   {
-    label: 'LLM',
+    label: 'LLMs',
     color: 'text-sky',
     icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h8M8 14h5M21 12a8 8 0 01-8 8H7l-4 2 1.2-4.2A8 8 0 1121 12z" />
       </svg>
     ),
@@ -25,7 +25,7 @@ const quickActions = [
     label: 'RAG',
     color: 'text-mint',
     icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M4 6.5A2.5 2.5 0 016.5 4H20v13H6.5A2.5 2.5 0 004 19.5v-13z" />
         <path strokeLinecap="round" d="M8 8h8M8 12h5" />
       </svg>
@@ -35,7 +35,7 @@ const quickActions = [
     label: 'Deploy',
     color: 'text-coral',
     icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0L8 8m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
       </svg>
     ),
@@ -43,9 +43,9 @@ const quickActions = [
 ]
 
 const stats = [
-  { value: 'Kaggle', label: 'Master' },
-  { value: '2nd', label: 'AI Hackathon' },
   { value: '6+', label: 'AI projects' },
+  { value: '2nd', label: 'AI Hackathon' },
+  { value: 'Master', label: 'Kaggle' },
 ]
 
 export default function Hero() {
@@ -140,58 +140,88 @@ export default function Hero() {
             </div>
           </div>
 
-          {/* Clay profile card */}
-          <div className={`hero-float transition-all duration-1000 delay-300 ${visible.buttons ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`} style={{ transitionProperty: 'opacity, transform' }}>
-            <div className="clay-lg p-6 md:p-7 max-w-md mx-auto relative">
-              <div className="flex items-center gap-4">
-                <div className="clay-tile w-16 h-16 rounded-full overflow-hidden shrink-0">
-                  <img
-                    src="1118a52b-a8fd-4b47-8042-f18d7b520be1.webp"
-                    alt="Tayyab Hussain"
-                    className="w-full h-full object-cover scale-110"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold tracking-widest uppercase text-muted">Good to see you</p>
-                  <p className="text-xl font-black text-cream truncate">Tayyab Hussain</p>
-                  <p className="text-xs text-muted truncate">AI Engineer · Multan, PK</p>
-                </div>
-                <span className="ml-auto w-3 h-3 rounded-full bg-mint shadow-[0_0_12px_rgba(110,231,183,0.8)] shrink-0" />
-              </div>
+          {/* Clay profile sections */}
+          <div className="hero-float">
+            <div className="relative max-w-md mx-auto space-y-4">
+              <div className="pointer-events-none absolute -inset-10 -z-10 rounded-full bg-lav/10 blur-3xl" aria-hidden="true" />
 
-              <div className="clay-inset mt-6 p-4 flex items-center gap-4">
-                <div className="clay-tile w-11 h-11 text-lav shrink-0">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <rect x="3" y="5" width="18" height="16" rx="4" />
-                    <path strokeLinecap="round" d="M8 3v4m8-4v4M3 11h18" />
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-extrabold text-cream">Current focus</p>
-                  <p className="text-xs text-muted">LLM &amp; RAG systems</p>
-                </div>
-                <svg className="w-4 h-4 text-muted ml-auto shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-
-              <p className="text-xs font-bold tracking-widest uppercase text-muted mt-6 mb-3">Quick actions</p>
-              <div className="grid grid-cols-4 gap-3">
-                {quickActions.map((action) => (
-                  <div key={action.label} className="clay-tile clay-hover flex flex-col items-center gap-2 py-3">
-                    <span className={action.color}>{action.icon}</span>
-                    <span className="text-[10px] font-bold text-muted tracking-wide">{action.label}</span>
+              {/* Identity */}
+              <div className={`clay relative p-6 transition-all duration-700 ease-out ${visible.buttons ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+                <div className="flex items-center gap-4">
+                  <div className="relative shrink-0">
+                    <div className="clay-tile w-20 h-20 rounded-full overflow-hidden">
+                      <img
+                        src="1118a52b-a8fd-4b47-8042-f18d7b520be1.webp"
+                        alt="Tayyab Hussain"
+                        className="w-full h-full object-cover scale-110"
+                      />
+                    </div>
+                    <span className="absolute -bottom-0.5 -right-0.5 flex w-5 h-5">
+                      <span className="absolute inline-flex w-full h-full rounded-full bg-mint/60 animate-ping" />
+                      <span className="relative inline-flex w-5 h-5 rounded-full bg-mint border-4 border-[var(--surface-solid)]" />
+                    </span>
                   </div>
-                ))}
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold tracking-[0.22em] uppercase text-muted">Good to see you</p>
+                    <p className="text-2xl font-black text-cream truncate">Tayyab Hussain</p>
+                    <p className="text-sm text-muted truncate">AI Engineer · Multan, PK</p>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 mt-6">
+              {/* Currently building */}
+              <div
+                className={`clay-sm relative overflow-hidden p-5 transition-all duration-700 ease-out ${visible.buttons ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+                style={{ transitionDelay: '100ms' }}
+              >
+                <div className="pointer-events-none absolute -top-12 -right-12 w-40 h-40 rounded-full bg-lav/15 blur-2xl" aria-hidden="true" />
+                <div className="relative flex items-center gap-2">
+                  <span className="relative flex w-2 h-2">
+                    <span className="absolute inline-flex w-full h-full rounded-full bg-lav opacity-70 animate-ping" />
+                    <span className="relative inline-flex w-2 h-2 rounded-full bg-lav" />
+                  </span>
+                  <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-muted">Currently building</p>
+                </div>
+                <p className="relative mt-2 text-2xl font-black text-cream leading-tight">LLM &amp; RAG systems</p>
+                <p className="relative text-sm text-muted mt-2 leading-relaxed">Production retrieval pipelines with LangChain, LangGraph &amp; vector search.</p>
+              </div>
+
+              {/* Stats */}
+              <div
+                className={`grid grid-cols-3 gap-3 transition-all duration-700 ease-out ${visible.buttons ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+                style={{ transitionDelay: '200ms' }}
+              >
                 {stats.map((s) => (
-                  <div key={s.label} className="clay-inset px-2 py-3 text-center">
-                    <p className="text-base font-black text-clay-gradient">{s.value}</p>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted">{s.label}</p>
+                  <div key={s.label} className="clay-sm py-4 text-center">
+                    <p className="text-xl font-black text-clay-gradient leading-none">{s.value}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted mt-1.5">{s.label}</p>
                   </div>
                 ))}
+              </div>
+
+              {/* Core stack + CTA */}
+              <div
+                className={`pt-1 transition-all duration-700 ease-out ${visible.buttons ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+                style={{ transitionDelay: '300ms' }}
+              >
+                <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-muted mb-3">Core stack</p>
+                <div className="flex flex-wrap gap-2">
+                  {coreStack.map((item) => (
+                    <span key={item.label} className="clay-pill flex items-center gap-2 px-3 py-1.5">
+                      <span className={item.color}>{item.icon}</span>
+                      <span className="text-[11px] font-bold tracking-wide text-cream-soft">{item.label}</span>
+                    </span>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setPanelOpen(true)}
+                  className="clay-btn w-full justify-center px-5 py-3 mt-5 text-sm"
+                >
+                  View full profile
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-6-6l6 6-6 6" />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>

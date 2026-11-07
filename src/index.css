@@ -21,16 +21,33 @@
 }
 
 @layer base {
-  html {
-    scroll-behavior: smooth;
-  }
-
-  body {
-    background:
+  :root {
+    --body-background:
       radial-gradient(1200px 800px at 15% -10%, rgba(139, 124, 246, 0.14), transparent 60%),
       radial-gradient(1000px 700px at 90% 10%, rgba(125, 211, 252, 0.09), transparent 55%),
       radial-gradient(900px 700px at 50% 110%, rgba(252, 165, 165, 0.07), transparent 60%),
       #101018;
+    --surface-solid: #20202b;
+    --panel-bg: #171722;
+    --skeleton: #1c1c27;
+    --line: rgba(255, 255, 255, 0.05);
+    --line-strong: rgba(255, 255, 255, 0.1);
+    --hover: rgba(255, 255, 255, 0.05);
+    --dot: #ffffff;
+    --watermark: rgba(255, 255, 255, 0.03);
+    --page-bg: #101018;
+    --media-fade: rgba(16, 16, 24, 0.65);
+    --panel-shadow: -30px 0 70px rgba(0, 0, 0, 0.65);
+    color-scheme: dark;
+  }
+
+  html {
+    background-color: var(--page-bg);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--body-background);
     color: var(--color-cream);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -172,6 +189,11 @@
       inset -6px -6px 14px rgba(70, 48, 160, 0.4);
   }
 
+  /* Invert light-colored logos only in dark mode */
+  .icon-invert {
+    filter: invert(1);
+  }
+
   /* Icon tile */
   .clay-tile {
     display: inline-flex;
@@ -214,11 +236,52 @@
 }
 
 @layer utilities {
+  /* Theme-aware soft text (opacity baked with the current palette) */
+  .text-cream-soft {
+    color: color-mix(in srgb, var(--color-cream) 80%, transparent);
+  }
+  .text-muted-soft {
+    color: color-mix(in srgb, var(--color-muted) 80%, transparent);
+  }
+
   .animate-float {
     animation: clay-float 7s ease-in-out infinite;
   }
   .animate-float-slow {
     animation: clay-float 11s ease-in-out infinite;
+  }
+
+  /* Scroll reveal */
+  .reveal {
+    opacity: 0;
+    transform: translate3d(0, 2rem, 0);
+    transition-property: opacity, transform, filter;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity, transform;
+  }
+  .reveal[data-variant='down'] {
+    transform: translate3d(0, -2rem, 0);
+  }
+  .reveal[data-variant='left'] {
+    transform: translate3d(-2.5rem, 0, 0);
+  }
+  .reveal[data-variant='right'] {
+    transform: translate3d(2.5rem, 0, 0);
+  }
+  .reveal[data-variant='scale'] {
+    transform: scale(0.94);
+  }
+  .reveal[data-variant='blur'] {
+    transform: translate3d(0, 1.5rem, 0);
+    filter: blur(10px);
+  }
+  .reveal[data-variant='none'] {
+    transform: none;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    filter: none;
   }
 }
 
@@ -236,7 +299,183 @@
   .animate-float-slow {
     animation: none;
   }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
   html {
     scroll-behavior: auto;
   }
+}
+
+/* ── Light theme ───────────────────────────────────────────────
+   Unlayered so these win over the layered @theme / component
+   styles above. Toggled by data-theme="light" on <html>. */
+:root[data-theme='light'] {
+  --color-ink: #eae6f3;
+  --color-ink-2: #e2dcee;
+  --color-clay: #f1edf8;
+  --color-clay-2: #e6e0f1;
+  --color-lav: #6d5ae8;
+  --color-lav-2: #5a49d1;
+  --color-sky: #0b8fc4;
+  --color-coral: #e06e6e;
+  --color-mint: #0f9d75;
+  --color-cream: #241f33;
+  --color-muted: #655f7a;
+
+  --body-background:
+    radial-gradient(1200px 800px at 15% -10%, rgba(139, 124, 246, 0.2), transparent 60%),
+    radial-gradient(1000px 700px at 90% 10%, rgba(125, 211, 252, 0.18), transparent 55%),
+    radial-gradient(900px 700px at 50% 110%, rgba(252, 165, 165, 0.16), transparent 60%),
+    #ece8f4;
+  --surface-solid: #f4f1fa;
+  --panel-bg: #f2eef9;
+  --skeleton: #e2dced;
+  --line: rgba(58, 47, 88, 0.1);
+  --line-strong: rgba(58, 47, 88, 0.2);
+  --hover: rgba(58, 47, 88, 0.06);
+  --dot: rgba(58, 47, 88, 0.75);
+  --watermark: rgba(58, 47, 88, 0.05);
+  --page-bg: #ece8f4;
+  --media-fade: rgba(236, 232, 244, 0.55);
+  --panel-shadow: -30px 0 70px rgba(110, 100, 150, 0.35);
+  color-scheme: light;
+}
+
+:root[data-theme='light'] ::selection {
+  background: rgba(109, 90, 232, 0.25);
+  color: #1a1428;
+}
+
+:root[data-theme='light'] ::-webkit-scrollbar-track {
+  background: #ece8f4;
+}
+:root[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: #cdc5de;
+  border-color: #ece8f4;
+}
+:root[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: #b8aed0;
+}
+
+/* Clay surfaces */
+:root[data-theme='light'] .icon-invert {
+  filter: none;
+}
+
+:root[data-theme='light'] .clay {
+  background: linear-gradient(145deg, #f8f5fd 0%, #e6e0f1 100%);
+  box-shadow:
+    12px 14px 30px rgba(158, 149, 188, 0.45),
+    -8px -8px 22px rgba(255, 255, 255, 0.9),
+    inset 2px 2px 5px rgba(255, 255, 255, 0.95),
+    inset -8px -8px 18px rgba(178, 168, 205, 0.35);
+}
+
+:root[data-theme='light'] .clay-sm {
+  background: linear-gradient(145deg, #f7f4fc 0%, #e8e2f2 100%);
+  box-shadow:
+    7px 8px 18px rgba(158, 149, 188, 0.4),
+    -5px -5px 14px rgba(255, 255, 255, 0.95),
+    inset 1.5px 1.5px 4px rgba(255, 255, 255, 0.95),
+    inset -5px -5px 12px rgba(178, 168, 205, 0.3);
+}
+
+:root[data-theme='light'] .clay-lg {
+  background: linear-gradient(145deg, #faf7fe 0%, #e4ddef 100%);
+  box-shadow:
+    18px 20px 46px rgba(158, 149, 188, 0.5),
+    -10px -10px 30px rgba(255, 255, 255, 0.95),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.98),
+    inset -10px -10px 24px rgba(178, 168, 205, 0.38);
+}
+
+:root[data-theme='light'] .clay-inset {
+  background: linear-gradient(145deg, #e3dced 0%, #efeaf7 100%);
+  box-shadow:
+    inset 5px 5px 12px rgba(158, 149, 188, 0.5),
+    inset -4px -4px 10px rgba(255, 255, 255, 0.95);
+}
+
+:root[data-theme='light'] .clay-hover:hover {
+  box-shadow:
+    16px 20px 40px rgba(158, 149, 188, 0.55),
+    -8px -8px 24px rgba(255, 255, 255, 0.95),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.98),
+    inset -8px -8px 18px rgba(178, 168, 205, 0.38);
+}
+:root[data-theme='light'] .clay-hover:active {
+  box-shadow:
+    6px 8px 18px rgba(158, 149, 188, 0.45),
+    -4px -4px 12px rgba(255, 255, 255, 0.9),
+    inset 4px 4px 10px rgba(158, 149, 188, 0.4),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.7);
+}
+
+:root[data-theme='light'] .clay-btn {
+  background: linear-gradient(145deg, #faf7fe 0%, #e7e1f2 100%);
+  color: var(--color-cream);
+  box-shadow:
+    7px 8px 18px rgba(158, 149, 188, 0.42),
+    -4px -4px 12px rgba(255, 255, 255, 0.9),
+    inset 1.5px 1.5px 4px rgba(255, 255, 255, 0.98),
+    inset -5px -5px 12px rgba(178, 168, 205, 0.35);
+}
+:root[data-theme='light'] .clay-btn:hover {
+  color: #120e20;
+  box-shadow:
+    10px 12px 24px rgba(158, 149, 188, 0.5),
+    -5px -5px 14px rgba(255, 255, 255, 0.95),
+    inset 2px 2px 5px rgba(255, 255, 255, 0.98),
+    inset -5px -5px 12px rgba(178, 168, 205, 0.35);
+}
+:root[data-theme='light'] .clay-btn:active {
+  box-shadow:
+    inset 4px 4px 10px rgba(158, 149, 188, 0.5),
+    inset -3px -3px 8px rgba(255, 255, 255, 0.8);
+}
+
+:root[data-theme='light'] .clay-btn-primary {
+  background: linear-gradient(145deg, #b7a2ff 0%, #7c6af0 100%);
+  color: #171226;
+  box-shadow:
+    8px 10px 22px rgba(124, 106, 240, 0.35),
+    -5px -5px 14px rgba(255, 255, 255, 0.9),
+    inset 2px 2px 5px rgba(255, 255, 255, 0.65),
+    inset -6px -6px 14px rgba(70, 48, 160, 0.35);
+}
+:root[data-theme='light'] .clay-btn-primary:hover {
+  color: #120e20;
+  box-shadow:
+    12px 14px 30px rgba(124, 106, 240, 0.42),
+    -6px -6px 16px rgba(255, 255, 255, 0.9),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.75),
+    inset -6px -6px 14px rgba(70, 48, 160, 0.35);
+}
+
+:root[data-theme='light'] .clay-tile {
+  background: linear-gradient(145deg, #f3effb 0%, #e1daee 100%);
+  box-shadow:
+    6px 7px 16px rgba(158, 149, 188, 0.42),
+    -4px -4px 12px rgba(255, 255, 255, 0.9),
+    inset 2px 2px 5px rgba(255, 255, 255, 0.98),
+    inset -5px -5px 12px rgba(178, 168, 205, 0.32);
+}
+
+:root[data-theme='light'] .clay-pill {
+  background: linear-gradient(145deg, #f6f2fc 0%, #e7e1f2 100%);
+  box-shadow:
+    4px 5px 12px rgba(158, 149, 188, 0.38),
+    -3px -3px 9px rgba(255, 255, 255, 0.9),
+    inset 1px 1px 3px rgba(255, 255, 255, 0.98),
+    inset -3px -3px 8px rgba(178, 168, 205, 0.3);
+}
+
+:root[data-theme='light'] .text-clay-gradient {
+  background: linear-gradient(120deg, #8b7cf6 0%, #6d5ae8 45%, #0b8fc4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
 }

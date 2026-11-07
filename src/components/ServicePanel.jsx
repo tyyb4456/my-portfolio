@@ -174,10 +174,10 @@ export default function ServicePanel({ service, onClose }) {
 
       {/* Panel */}
       <div
-        className={`relative ml-auto w-full max-w-2xl h-full bg-[#171722] border-l border-white/5 shadow-[-30px_0_70px_rgba(0,0,0,0.65)] flex flex-col overflow-hidden transition-transform duration-500 ease-out ${mounted ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`relative ml-auto w-full max-w-2xl h-full bg-[var(--panel-bg)] border-l border-[var(--line)] shadow-[var(--panel-shadow)] flex flex-col overflow-hidden transition-transform duration-500 ease-out ${mounted ? 'translate-x-0' : 'translate-x-full'}`}
       >
         {/* Top bar */}
-        <div className="flex items-center justify-between px-8 py-5 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between px-8 py-5 border-b border-[var(--line)] shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
               <span className="w-3 h-3 rounded-full bg-red-500/70" />
@@ -193,7 +193,7 @@ export default function ServicePanel({ service, onClose }) {
         <div className="flex-1 overflow-y-auto">
 
           {/* Hero block */}
-          <div className="px-8 py-8 border-b border-white/5">
+          <div className="px-8 py-8 border-b border-[var(--line)]">
             <div className="clay-tile w-16 h-16 mb-4">{service.icon}</div>
             <h2 className="text-3xl font-black text-cream tracking-tight mb-2">{service.title}</h2>
             <p className="text-lav text-sm font-mono italic mb-5">{data.tagline}</p>
@@ -201,7 +201,7 @@ export default function ServicePanel({ service, onClose }) {
           </div>
 
           {/* What you get */}
-          <div className="px-8 py-7 border-b border-white/5">
+          <div className="px-8 py-7 border-b border-[var(--line)]">
             <h3 className="text-xs text-lav uppercase tracking-widest font-mono font-bold mb-5">What You Get</h3>
             <ul className="space-y-3">
               {data.whatYouGet.map((item, i) => (
@@ -214,7 +214,7 @@ export default function ServicePanel({ service, onClose }) {
           </div>
 
           {/* Process */}
-          <div className="px-8 py-7 border-b border-white/5">
+          <div className="px-8 py-7 border-b border-[var(--line)]">
             <h3 className="text-xs text-lav uppercase tracking-widest font-mono font-bold mb-6">The Process</h3>
             <div className="space-y-5">
               {data.process.map((step, i) => (
@@ -222,7 +222,7 @@ export default function ServicePanel({ service, onClose }) {
                   <div className="clay-tile shrink-0 w-9 h-9 rounded-full group-hover:-translate-y-0.5 transition-transform duration-200">
                     <span className="text-lav text-xs font-mono font-bold">{step.step}</span>
                   </div>
-                  <div className="pb-5 border-b border-white/5 flex-1 last:border-0 last:pb-0">
+                  <div className="pb-5 border-b border-[var(--line)] flex-1 last:border-0 last:pb-0">
                     <p className="text-cream text-sm font-extrabold mb-1">{step.title}</p>
                     <p className="text-muted text-xs leading-relaxed">{step.desc}</p>
                   </div>
@@ -232,11 +232,11 @@ export default function ServicePanel({ service, onClose }) {
           </div>
 
           {/* Tech Stack */}
-          <div className="px-8 py-7 border-b border-white/5">
+          <div className="px-8 py-7 border-b border-[var(--line)]">
             <h3 className="text-xs text-lav uppercase tracking-widest font-mono font-bold mb-4">Tech Stack</h3>
             <div className="flex flex-wrap gap-2">
               {data.stack.map(tech => (
-                <span key={tech} className="clay-pill px-3 py-1.5 text-xs text-cream/80 font-semibold hover:text-lav transition-all duration-200">
+                <span key={tech} className="clay-pill px-3 py-1.5 text-xs text-cream-soft font-semibold hover:text-lav transition-all duration-200">
                   {tech}
                 </span>
               ))}
@@ -259,7 +259,7 @@ export default function ServicePanel({ service, onClose }) {
         </div>
 
         {/* Bottom CTA */}
-        <div className="px-8 py-5 border-t border-white/5 shrink-0 flex items-center justify-between">
+        <div className="px-8 py-5 border-t border-[var(--line)] shrink-0 flex items-center justify-between">
           <p className="text-muted text-xs font-mono">Ready to start?</p>
           <a
             href="mailto:igntayyab@gmail.com"

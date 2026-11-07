@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import ServicePanel from './ServicePanel'
+import Reveal from './Reveal'
 
 const services = [
   {
@@ -61,7 +62,7 @@ function TiltCard({ children, className, style }) {
     <div
       ref={ref}
       className={className}
-      style={{ ...style, willChange: 'transform', transform: 'perspective(600px) rotateX(0) rotateY(0) scale(1)', transition: 'opacity 0.5s, transform 0.12s ease-out' }}
+      style={{ ...style, willChange: 'transform', transform: 'perspective(600px) rotateX(0) rotateY(0) scale(1)', transition: 'transform 0.12s ease-out' }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
@@ -71,25 +72,14 @@ function TiltCard({ children, className, style }) {
 }
 
 export default function Services() {
-  const [visible, setVisible] = useState(false)
   const [selectedService, setSelectedService] = useState(null)
-  const sectionRef = useRef(null)
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setVisible(true) },
-      { threshold: 0.15 }
-    )
-    if (sectionRef.current) observer.observe(sectionRef.current)
-    return () => observer.disconnect()
-  }, [])
 
   return (
     <>
-      <section id="services" ref={sectionRef} className="relative py-24 px-6">
+      <section id="services" className="relative py-24 px-6">
         <div className="max-w-6xl mx-auto">
 
-          <div className={`mb-14 text-center transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
+          <Reveal variant="up" className="mb-14 text-center">
             <p className="text-xs uppercase text-lav mb-3 tracking-[0.25em] font-extrabold">What I do</p>
             <h2 className="text-4xl md:text-5xl font-black mb-5 tracking-tight">
               My <span className="text-clay-gradient">Services</span>
@@ -104,28 +94,26 @@ export default function Services() {
             >
               Start Your Project
             </a>
-          </div>
+          </Reveal>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {services.map((service, i) => (
-              <TiltCard
-                key={service.title}
-                className={`clay p-7 group flex flex-col ${
-                  visible ? 'opacity-100' : 'opacity-0'
-                }`}
-                style={{ transitionDelay: `${i * 120}ms` }}
-              >
-                <div className="clay-tile w-16 h-16 mb-5">{service.icon}</div>
-                <h3 className="text-xl font-extrabold mb-2 text-cream">{service.title}</h3>
-                <p className="text-muted mb-4 flex-1 leading-relaxed">{service.desc}</p>
-                <div className="text-sm text-lav/80 font-bold mb-4">{service.sub}</div>
-                <button
-                  onClick={() => setSelectedService(service)}
-                  className="text-cream/80 hover:text-lav text-sm font-extrabold flex items-center gap-1 group-hover:gap-2 transition-all duration-200 w-fit"
+              <Reveal key={service.title} variant="up" delay={i * 120}>
+                <TiltCard
+                  className="clay p-7 group flex flex-col h-full"
                 >
-                  Read more <span>→</span>
-                </button>
-              </TiltCard>
+                  <div className="clay-tile w-16 h-16 mb-5">{service.icon}</div>
+                  <h3 className="text-xl font-extrabold mb-2 text-cream">{service.title}</h3>
+                  <p className="text-muted mb-4 flex-1 leading-relaxed">{service.desc}</p>
+                  <div className="text-sm text-lav/80 font-bold mb-4">{service.sub}</div>
+                  <button
+                    onClick={() => setSelectedService(service)}
+                    className="text-cream-soft hover:text-lav text-sm font-extrabold flex items-center gap-1 group-hover:gap-2 transition-all duration-200 w-fit"
+                  >
+                    Read more <span>→</span>
+                  </button>
+                </TiltCard>
+              </Reveal>
             ))}
           </div>
 

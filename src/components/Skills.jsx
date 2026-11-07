@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import Reveal from './Reveal'
 
 const skills = [
   { name: 'Python',     icon: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg',         invert: false },
@@ -13,29 +14,24 @@ const skills = [
   { name: 'C++',        icon: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/cplusplus/cplusplus-original.svg',   invert: false },
 ]
 
-function SkillCard({ skill, visible, delay, cardRef }) {
+function SkillCard({ skill, cardRef }) {
   return (
     <div
-      className={`transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
-      style={{ transitionDelay: `${delay}ms` }}
+      ref={cardRef}
+      style={{ willChange: 'transform' }}
+      className="clay clay-hover group relative flex flex-col items-center justify-center gap-3 p-6 min-h-[160px]"
     >
-      <div
-        ref={cardRef}
-        style={{ willChange: 'transform' }}
-        className="clay clay-hover group relative flex flex-col items-center justify-center gap-3 p-6 min-h-[160px]"
-      >
-        <div className="clay-inset w-16 h-16 rounded-2xl flex items-center justify-center">
-          <img
-            src={skill.icon}
-            alt={skill.name}
-            loading="lazy"
-            className={`relative z-10 w-8 h-8 transition-transform duration-300 group-hover:scale-110 ${skill.invert ? 'invert' : ''}`}
-          />
-        </div>
-        <p className="relative z-10 text-muted text-sm font-extrabold tracking-wide group-hover:text-cream transition-colors duration-300">
-          {skill.name}
-        </p>
+      <div className="clay-inset w-16 h-16 rounded-2xl flex items-center justify-center">
+        <img
+          src={skill.icon}
+          alt={skill.name}
+          loading="lazy"
+          className={`relative z-10 w-8 h-8 transition-transform duration-300 group-hover:scale-110 ${skill.invert ? 'icon-invert' : ''}`}
+        />
       </div>
+      <p className="relative z-10 text-muted text-sm font-extrabold tracking-wide group-hover:text-cream transition-colors duration-300">
+        {skill.name}
+      </p>
     </div>
   )
 }
@@ -107,29 +103,28 @@ export default function Skills() {
       <div
         className="absolute inset-0 pointer-events-none opacity-[0.05]"
         style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
+          backgroundImage: 'radial-gradient(circle at 1px 1px, var(--dot) 1px, transparent 0)',
           backgroundSize: '48px 48px',
         }}
       />
 
       <div className="relative max-w-6xl mx-auto">
 
-        <div className={`text-center mb-16 transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
+        <Reveal variant="up" className="text-center mb-16">
           <h2 className="text-5xl md:text-6xl font-black tracking-tight text-cream mb-6">
             My <span className="text-clay-gradient">Skills</span>
           </h2>
           <div className="h-1.5 rounded-full bg-linear-to-r from-lav to-sky mx-auto transition-all duration-700 delay-300" style={{ width: visible ? '90px' : '0px' }} />
-        </div>
+        </Reveal>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
           {skills.map((skill, i) => (
-            <SkillCard
-              key={skill.name}
-              skill={skill}
-              visible={visible}
-              delay={i * 60}
-              cardRef={(el) => { cardRefs.current[i] = el }}
-            />
+            <Reveal key={skill.name} variant="up" delay={i * 60}>
+              <SkillCard
+                skill={skill}
+                cardRef={(el) => { cardRefs.current[i] = el }}
+              />
+            </Reveal>
           ))}
         </div>
       </div>

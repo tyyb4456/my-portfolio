@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import Reveal from './Reveal'
 
 const socialLinks = [
   {
@@ -31,26 +31,14 @@ const socialLinks = [
 ]
 
 export default function Footer() {
-  const [visible, setVisible] = useState(false)
-  const footerRef = useRef(null)
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setVisible(true) },
-      { threshold: 0.1 }
-    )
-    if (footerRef.current) observer.observe(footerRef.current)
-    return () => observer.disconnect()
-  }, [])
-
   return (
-    <footer ref={footerRef} className="relative px-6 pb-8 pt-6 overflow-hidden">
+    <footer className="relative px-6 pb-8 pt-6 overflow-hidden">
       <div className="max-w-6xl mx-auto">
         <div className="clay-lg p-8 md:p-12">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
 
             {/* Brand */}
-            <div className={`transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+            <Reveal variant="up">
               <h3 className="text-2xl font-black tracking-tight mb-4">
                 <span className="text-clay-gradient">tayyab</span>
                 <span className="text-muted">.ai</span>
@@ -70,10 +58,10 @@ export default function Footer() {
                   </a>
                 ))}
               </div>
-            </div>
+            </Reveal>
 
             {/* Quick Links */}
-            <div className={`transition-all duration-700 delay-150 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+            <Reveal variant="up" delay={120}>
               <h4 className="text-lg font-extrabold text-cream mb-6 tracking-wide">Quick Links</h4>
               <nav className="space-y-4">
                 {['About', 'Services', 'Skills', 'Projects'].map((link) => (
@@ -86,10 +74,10 @@ export default function Footer() {
                   </a>
                 ))}
               </nav>
-            </div>
+            </Reveal>
 
             {/* Contact */}
-            <div className={`transition-all duration-700 delay-300 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+            <Reveal variant="up" delay={240}>
               <h4 className="text-lg font-extrabold text-cream mb-6 tracking-wide">Get in Touch</h4>
               <div className="space-y-4">
                 <a href="mailto:igntayyab@gmail.com" className="flex items-center space-x-3 text-muted hover:text-lav hover:translate-x-1 transition-all duration-300">
@@ -112,20 +100,20 @@ export default function Footer() {
                   <span>Multan, Pakistan</span>
                 </div>
               </div>
-            </div>
+            </Reveal>
 
           </div>
 
           {/* Bottom bar */}
-          <div className={`border-t border-white/5 pt-8 flex flex-col md:flex-row justify-between items-center transition-all duration-700 delay-500 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
-            <p className="text-muted/80 text-sm mb-4 md:mb-0">
+          <Reveal variant="up" delay={360} className="border-t border-[var(--line)] pt-8 flex flex-col md:flex-row justify-between items-center">
+            <p className="text-muted-soft text-sm mb-4 md:mb-0">
               © 2025 Tayyab Hussain. All rights reserved.
             </p>
             <div className="flex space-x-6 text-sm">
-              <a href="#" className="text-muted/80 hover:text-cream transition-all duration-300">Privacy Policy</a>
-              <a href="#" className="text-muted/80 hover:text-cream transition-all duration-300">Terms of Service</a>
+              <a href="#" className="text-muted-soft hover:text-cream transition-all duration-300">Privacy Policy</a>
+              <a href="#" className="text-muted-soft hover:text-cream transition-all duration-300">Terms of Service</a>
             </div>
-          </div>
+          </Reveal>
         </div>
       </div>
     </footer>
